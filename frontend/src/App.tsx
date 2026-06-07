@@ -14,12 +14,17 @@ import {
 
 type ViewMode = "pyramid" | "plane" | "slice" | "commit";
 type PositionedNode = GraphNode & {
-  x?: number;
-  y?: number;
-  z?: number;
+  x: number;
+  y: number;
+  z: number;
   fx?: number;
   fy?: number;
   fz?: number;
+};
+
+type VisibleGraph = {
+  nodes: PositionedNode[];
+  links: GraphEdge[];
 };
 
 const REPO_PATH_STORAGE_KEY = "specGraphVisualizer:lastRepoPath";
@@ -97,7 +102,7 @@ export default function App() {
   }, [viewMode, selectedLayer, selectedNodeId, graph]);
 
   const visibleGraph = useMemo(() => {
-    if (!graph) return { nodes: [], links: [] };
+    if (!graph) return { nodes: [], links: [] } satisfies VisibleGraph;
     return buildVisibleGraph(graph.nodes, graph.edges, {
       viewMode,
       selectedLayer,
@@ -268,6 +273,9 @@ export default function App() {
 
         <div className="graph-canvas" style={{ height: GRAPH_HEIGHT }}>
           {visibleGraph.nodes.length ? (
+            viewMode === "plane" || viewMode === "slice" ? (
+              <Graph2D graph={visibleGraph} mode={viewMode} onNodeClick={openNode} />
+            ) : (
             <ForceGraph3D
               ref={graphRef}
               graphData={visibleGraph}
@@ -284,6 +292,7 @@ export default function App() {
               cooldownTicks={0}
               enableNodeDrag
             />
+            )
           ) : (
             <div className="empty-state">No nodes match the current filters.</div>
           )}
@@ -304,21 +313,12 @@ function buildVisibleGraph(
     includeCrossCutting: boolean;
     changedOnly: boolean;
   }
-) {
+): VisibleGraph {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   let selectedIds = new Set<string>();
 
   if (options.viewMode === "plane") {
-    const layerIds = new Set(nodes.filter((node) => node.layerIndex === options.selectedLayer).map((node) => node.id));
-    selectedIds = new Set(layerIds);
-    if (options.includeCrossCutting) {
-      for (const edge of edges) {
-        const source = edgeEndpoint(edge.source);
-        const target = edgeEndpoint(edge.target);
-        if (layerIds.has(source) && CROSS_KINDS.has(byId.get(target)?.kind as GraphNodeKind)) selectedIds.add(target);
-        if (layerIds.has(target) && CROSS_KINDS.has(byId.get(source)?.kind as GraphNodeKind)) selectedIds.add(source);
-      }
-    }
+    selectedIds = new Set(nodes.filter((node) => node.layerIndex === options.selectedLayer).map((node) => node.id));
   } else if (options.viewMode === "slice" && options.selectedNodeId) {
     selectedIds = sliceIds(options.selectedNodeId, nodes, edges);
   } else if (options.viewMode === "commit") {
@@ -334,7 +334,7 @@ function buildVisibleGraph(
     selectedIds = new Set(nodes.map((node) => node.id));
   }
 
-  if (!options.includeCrossCutting) {
+  if (!options.includeCrossCutting || options.viewMode === "plane" || options.viewMode === "slice") {
     selectedIds = new Set([...selectedIds].filter((id) => !CROSS_KINDS.has(byId.get(id)?.kind as GraphNodeKind)));
   }
 
@@ -362,13 +362,10 @@ function buildVisibleGraph(
 function sliceIds(rootId: string, nodes: GraphNode[], edges: GraphEdge[]) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const outbound = new Map<string, string[]>();
-  const undirected = new Map<string, string[]>();
   for (const edge of edges) {
     const source = edgeEndpoint(edge.source);
     const target = edgeEndpoint(edge.target);
     push(outbound, source, target);
-    push(undirected, source, target);
-    push(undirected, target, source);
   }
 
   const selected = new Set<string>([rootId]);
@@ -380,7 +377,7 @@ function sliceIds(rootId: string, nodes: GraphNode[], edges: GraphEdge[]) {
       const nextNode = byId.get(next);
       if (!nextNode) continue;
       const nextLayer = nextNode.layerIndex ?? currentLayer;
-      if (nextNode.kind === "code" || nextLayer >= currentLayer || CROSS_KINDS.has(nextNode.kind)) {
+      if (nextNode.kind === "code" || (nextLayer > currentLayer && !CROSS_KINDS.has(nextNode.kind))) {
         if (!selected.has(next)) {
           selected.add(next);
           queue.push(next);
@@ -389,12 +386,6 @@ function sliceIds(rootId: string, nodes: GraphNode[], edges: GraphEdge[]) {
     }
   }
 
-  for (const id of [...selected]) {
-    for (const neighbor of undirected.get(id) ?? []) {
-      const node = byId.get(neighbor);
-      if (node && CROSS_KINDS.has(node.kind)) selected.add(neighbor);
-    }
-  }
   return selected;
 }
 
@@ -457,6 +448,96 @@ function radialPosition(nodes: GraphNode[], y: number, radius: number): Position
     const z = Math.sin(angle) * (radius + jitter);
     return { ...node, x, y, z, fx: x, fy: y, fz: z };
   });
+}
+
+function Graph2D({
+  graph,
+  mode,
+  onNodeClick
+}: {
+  graph: VisibleGraph;
+  mode: Extract<ViewMode, "plane" | "slice">;
+  onNodeClick: (node: GraphNode) => void;
+}) {
+  const bounds = graphBounds(graph.nodes, mode);
+  const projectedNodes = new Map(
+    graph.nodes.map((node) => {
+      const point = projectNode(node, mode);
+      return [node.id, { node, x: point.x, y: point.y }];
+    })
+  );
+
+  return (
+    <svg className="graph-2d" viewBox={`${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`} role="img">
+      <g className="graph-2d-links">
+        {graph.links.map((edge) => {
+          const source = projectedNodes.get(edgeEndpoint(edge.source));
+          const target = projectedNodes.get(edgeEndpoint(edge.target));
+          if (!source || !target) return null;
+          return (
+            <line
+              key={edge.id}
+              x1={source.x}
+              y1={source.y}
+              x2={target.x}
+              y2={target.y}
+              stroke={linkColor(edge.kind)}
+              strokeWidth={edge.kind === "changed_with" ? 2.6 : 1.35}
+              strokeOpacity={edge.kind === "hierarchy" ? 0.42 : 0.68}
+            />
+          );
+        })}
+      </g>
+      <g className="graph-2d-nodes">
+        {graph.nodes.map((node) => {
+          const point = projectedNodes.get(node.id);
+          if (!point) return null;
+          const radius = node.changed ? 13 : node.kind === "code" ? 8 : 10;
+          return (
+            <g
+              key={node.id}
+              className="graph-2d-node"
+              transform={`translate(${point.x} ${point.y})`}
+              onClick={() => onNodeClick(node)}
+            >
+              <circle
+                r={radius}
+                fill={node.changed ? "#ffdf5d" : KIND_COLORS[node.kind]}
+                stroke={node.hasDiagrams ? "#ffffff" : "rgba(255,255,255,0.34)"}
+                strokeWidth={node.hasDiagrams ? 3 : 1.5}
+              />
+              {node.hasDiagrams && <text className="graph-2d-diagram" x={radius + 7} y={4}>◇</text>}
+              <text className="graph-2d-label" x={radius + 9} y={4}>
+                {nodeLabel(node)}
+              </text>
+              <title>{nodeTooltip(node)}</title>
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+function graphBounds(nodes: PositionedNode[], mode: Extract<ViewMode, "plane" | "slice">) {
+  const points = nodes.map((node) => projectNode(node, mode));
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs, 0) - 220;
+  const maxX = Math.max(...xs, 0) + 340;
+  const minY = Math.min(...ys, 0) - 140;
+  const maxY = Math.max(...ys, 0) + 140;
+  return {
+    minX,
+    minY,
+    width: Math.max(maxX - minX, 640),
+    height: Math.max(maxY - minY, 420)
+  };
+}
+
+function projectNode(node: PositionedNode, mode: Extract<ViewMode, "plane" | "slice">) {
+  if (mode === "plane") return { x: node.x, y: node.z };
+  return { x: node.x, y: -node.y };
 }
 
 function spreadLine(nodes: GraphNode[], y: number, width: number): PositionedNode[] {
