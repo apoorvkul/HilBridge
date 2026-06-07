@@ -1,4 +1,6 @@
-# Spec Graph Visualizer
+# HilBridge
+
+Keeping Humans in the Loop of AI-Native Development.
 
 A local-first TypeScript app for exploring spec-driven repositories as an interactive 3D knowledge graph.
 
@@ -85,7 +87,7 @@ Recognized GitHub remotes are converted to browser URLs:
 https://github.com/<owner>/<repo>/blob/<branch>/<path>
 ```
 
-SSH remotes such as `git@github.com:owner/repo.git` and HTTPS remotes are supported. If the remote is not a GitHub URL, graph extraction still works, but node clicks will not have GitHub destinations.
+SSH remotes such as `git@github.com:owner/repo.git`, HTTPS remotes, and HTTPS remotes with an embedded username are supported. If the remote is not a GitHub URL, graph extraction still works, but node clicks will not have GitHub destinations.
 
 ## Views
 
@@ -102,9 +104,9 @@ Code
 
 Cross-cutting notes orbit the main stack and can connect to any layer.
 
-**Horizontal Plane** shows one selected layer and directly connected cross-cutting notes.
+**Horizontal Plane** shows one selected layer as a true 2D graph.
 
-**Vertical Slice** starts from a selected note and follows outgoing relationships down toward modules, contracts, and code.
+**Vertical Slice** starts from a selected note and follows outgoing relationships down toward modules, contracts, and code as a true 2D graph.
 
 **Commit Diff** accepts a commit hash, runs:
 

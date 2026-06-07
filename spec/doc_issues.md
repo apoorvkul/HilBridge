@@ -25,7 +25,7 @@ This note records implementation gaps, naming drift, and documentation caveats d
 - There are no screenshots checked into the repository.
 - The README does not describe the new self-hosting `spec/` directory yet.
 - Self-hosting verification on `/Users/apoorvkul/Projects/xfer` succeeded after these docs were added: the API returned 61 nodes, 239 edges, 65 source-reference edges, 20 code nodes, no orphan documents, and Vision reached code nodes.
-- The self-hosting verification returned one warning: `Could not read git origin remote.` This is expected until a GitHub remote is connected.
+- A later self-hosting verification after connecting the GitHub remote and adding username-qualified HTTPS remote parsing returned no warnings.
 
 ## Linked Notes
 

@@ -397,12 +397,30 @@ async function getGitHubInfo(
 }
 
 function parseGitHubRemote(remoteUrl: string): { owner: string; repo: string } | null {
-  const trimmed = remoteUrl.trim().replace(/\.git$/, "");
-  const httpsMatch = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
-  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
-  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
-  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+  const trimmed = remoteUrl.trim();
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname.toLowerCase() === "github.com") {
+      const [owner, repo] = cleanGitHubPath(url.pathname);
+      if (owner && repo) return { owner, repo };
+    }
+  } catch {
+    // Fall through to scp-style SSH parsing below.
+  }
+
+  const sshMatch = trimmed.match(/^(?:[^@]+@)?github\.com:([^/]+)\/(.+?)(?:\.git)?\/?$/i);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2].replace(/\.git$/i, "") };
   return null;
+}
+
+function cleanGitHubPath(pathname: string): [string | undefined, string | undefined] {
+  const parts = pathname
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return [undefined, undefined];
+  return [parts[0], parts[1].replace(/\.git$/i, "")];
 }
 
 function githubBlobUrl(github: GraphResponse["repo"]["github"], relativePath: string, ref?: string): string | undefined {

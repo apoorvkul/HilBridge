@@ -15,7 +15,7 @@ GitHub metadata is optional and derived from local git commands.
 
 - Blob URL: `https://github.com/<owner>/<repo>/blob/<branch-or-ref>/<path>`.
 - Commit URL: `https://github.com/<owner>/<repo>/commit/<commitHash>`.
-- SSH and HTTPS GitHub remotes are recognized.
+- SSH, HTTPS, and HTTPS remotes with an embedded username are recognized.
 - Non-GitHub remotes leave URLs undefined and add warnings.
 
 ## Modules
