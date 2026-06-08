@@ -52,6 +52,8 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("pyramid");
   const [selectedLayer, setSelectedLayer] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [selectedPyramidNodeId, setSelectedPyramidNodeId] = useState("");
+  const [expandedPyramidNodeIds, setExpandedPyramidNodeIds] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [includeCrossCutting, setIncludeCrossCutting] = useState(true);
   const [changedOnly, setChangedOnly] = useState(false);
@@ -83,6 +85,8 @@ export default function App() {
       localStorage.setItem(REPO_PATH_STORAGE_KEY, trimmedRepoPath);
       setRepoPath(trimmedRepoPath);
       setGraph(json);
+      setSelectedPyramidNodeId("");
+      setExpandedPyramidNodeIds(new Set());
       const firstSliceNode = json.nodes.find((node: GraphNode) => node.kind === "capability" || node.kind === "flow");
       setSelectedNodeId((current) => current || firstSliceNode?.id || "");
     } catch (requestError) {
@@ -101,17 +105,48 @@ export default function App() {
     graphRef.current?.cameraPosition({ x: 0, y: 90, z: 760 }, { x: 0, y: 0, z: 0 }, 600);
   }, [viewMode, selectedLayer, selectedNodeId, graph]);
 
+  useEffect(() => {
+    if (!graph || !selectedPyramidNodeId) return;
+    if (!graph.nodes.some((node) => node.id === selectedPyramidNodeId)) {
+      setSelectedPyramidNodeId("");
+    }
+  }, [graph, selectedPyramidNodeId]);
+
   const visibleGraph = useMemo(() => {
     if (!graph) return { nodes: [], links: [] } satisfies VisibleGraph;
     return buildVisibleGraph(graph.nodes, graph.edges, {
       viewMode,
       selectedLayer,
       selectedNodeId,
+      expandedPyramidNodeIds,
       search,
       includeCrossCutting,
       changedOnly
     });
-  }, [graph, viewMode, selectedLayer, selectedNodeId, search, includeCrossCutting, changedOnly]);
+  }, [graph, viewMode, selectedLayer, selectedNodeId, expandedPyramidNodeIds, search, includeCrossCutting, changedOnly]);
+
+  const selectedPyramidNode = useMemo(() => {
+    if (!graph || viewMode !== "pyramid" || !selectedPyramidNodeId) return undefined;
+    return graph.nodes.find((node) => node.id === selectedPyramidNodeId);
+  }, [graph, selectedPyramidNodeId, viewMode]);
+
+  const selectedPyramidExpansionTargets = useMemo(() => {
+    if (!graph || !selectedPyramidNode) return [];
+    const visibleIds = new Set(visibleGraph.nodes.map((node) => node.id));
+    return pyramidExpansionTargets(selectedPyramidNode.id, graph.nodes, graph.edges).filter((id) => !visibleIds.has(id));
+  }, [graph, selectedPyramidNode, visibleGraph.nodes]);
+
+  const hasPyramidExpansion = expandedPyramidNodeIds.size > 0;
+
+  const expandSelectedPyramidNode = () => {
+    if (!selectedPyramidNode || !selectedPyramidExpansionTargets.length) return;
+    setExpandedPyramidNodeIds((current) => new Set(current).add(selectedPyramidNode.id));
+  };
+
+  const resetPyramid = () => {
+    setSelectedPyramidNodeId("");
+    setExpandedPyramidNodeIds(new Set());
+  };
 
   const selectedNodeOptions = useMemo(() => {
     return (graph?.nodes ?? [])
@@ -270,28 +305,59 @@ export default function App() {
 
         {error && <div className="notice danger">{error}</div>}
         {graph?.warnings.length ? <div className="notice">{graph.warnings.slice(0, 3).join(" · ")}</div> : null}
+        {selectedPyramidNode && (
+          <div className="node-action-bar">
+            <div className="node-action-summary">
+              <span>{KIND_LABELS[selectedPyramidNode.kind]}</span>
+              <strong>{selectedPyramidNode.label}</strong>
+            </div>
+            <div className="node-action-buttons">
+              <button type="button" onClick={expandSelectedPyramidNode} disabled={!selectedPyramidExpansionTargets.length}>
+                Expand
+              </button>
+              <button
+                type="button"
+                onClick={() => openNode(selectedPyramidNode)}
+                disabled={!selectedPyramidNode.githubUrl && !selectedPyramidNode.githubDiffUrl}
+              >
+                Open in GitHub
+              </button>
+              <button type="button" onClick={() => setSelectedPyramidNodeId("")}>
+                Clear
+              </button>
+              {hasPyramidExpansion && (
+                <button type="button" onClick={resetPyramid}>
+                  Reset Pyramid
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="graph-canvas" style={{ height: GRAPH_HEIGHT }}>
           {visibleGraph.nodes.length ? (
             viewMode === "plane" || viewMode === "slice" ? (
               <Graph2D graph={visibleGraph} mode={viewMode} onNodeClick={openNode} />
             ) : (
-            <ForceGraph3D
-              ref={graphRef}
-              graphData={visibleGraph}
-              backgroundColor="#10141a"
-              nodeThreeObject={(node) => makeNodeObject(node as PositionedNode)}
-              nodeThreeObjectExtend={false}
-              nodeLabel={(node) => nodeTooltip(node as GraphNode)}
-              linkColor={(link) => linkColor((link as GraphEdge).kind)}
-              linkOpacity={0.52}
-              linkWidth={(link) => ((link as GraphEdge).kind === "changed_with" ? 2.2 : 1)}
-              linkDirectionalParticles={(link) => (((link as GraphEdge).kind === "changed_with" ? 2 : 0))}
-              linkDirectionalParticleWidth={2}
-              onNodeClick={(node) => openNode(node as GraphNode)}
-              cooldownTicks={0}
-              enableNodeDrag
-            />
+              <ForceGraph3D
+                ref={graphRef}
+                graphData={visibleGraph}
+                backgroundColor="#10141a"
+                nodeThreeObject={(node) => makeNodeObject(node as PositionedNode)}
+                nodeThreeObjectExtend={false}
+                nodeLabel={(node) => nodeTooltip(node as GraphNode)}
+                linkColor={(link) => linkColor((link as GraphEdge).kind)}
+                linkOpacity={0.52}
+                linkWidth={(link) => ((link as GraphEdge).kind === "changed_with" ? 2.2 : 1)}
+                linkDirectionalParticles={(link) => (((link as GraphEdge).kind === "changed_with" ? 2 : 0))}
+                linkDirectionalParticleWidth={2}
+                onNodeClick={(node) => {
+                  if (viewMode === "pyramid") setSelectedPyramidNodeId((node as GraphNode).id);
+                  else openNode(node as GraphNode);
+                }}
+                cooldownTicks={0}
+                enableNodeDrag
+              />
             )
           ) : (
             <div className="empty-state">No nodes match the current filters.</div>
@@ -309,6 +375,7 @@ function buildVisibleGraph(
     viewMode: ViewMode;
     selectedLayer: number;
     selectedNodeId: string;
+    expandedPyramidNodeIds: Set<string>;
     search: string;
     includeCrossCutting: boolean;
     changedOnly: boolean;
@@ -331,7 +398,7 @@ function buildVisibleGraph(
       if (changed.has(target)) selectedIds.add(source);
     }
   } else {
-    selectedIds = new Set(nodes.map((node) => node.id));
+    selectedIds = pyramidVisibleIds(nodes, edges, options.expandedPyramidNodeIds);
   }
 
   if (!options.includeCrossCutting || options.viewMode === "plane" || options.viewMode === "slice") {
@@ -357,6 +424,48 @@ function buildVisibleGraph(
   const positionedNodes = positionNodes(visibleNodes, visibleEdges, options.viewMode, options.selectedLayer, options.selectedNodeId);
 
   return { nodes: positionedNodes, links: visibleEdges };
+}
+
+function pyramidVisibleIds(nodes: GraphNode[], edges: GraphEdge[], expandedIds: Set<string>) {
+  const selected = new Set(
+    nodes.filter((node) => node.kind === "vision" || node.kind === "capability").map((node) => node.id)
+  );
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const expandedId of expandedIds) {
+      if (!selected.has(expandedId)) continue;
+      for (const targetId of pyramidExpansionTargets(expandedId, nodes, edges)) {
+        if (!selected.has(targetId)) {
+          selected.add(targetId);
+          changed = true;
+        }
+      }
+    }
+  }
+  return selected;
+}
+
+function pyramidExpansionTargets(sourceId: string, nodes: GraphNode[], edges: GraphEdge[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const sourceNode = byId.get(sourceId);
+  if (!sourceNode) return [];
+  const sourceLayer = sourceNode.layerIndex ?? -1;
+  const targets = new Set<string>();
+
+  for (const edge of edges) {
+    const source = edgeEndpoint(edge.source);
+    if (source !== sourceId) continue;
+    const targetId = edgeEndpoint(edge.target);
+    const targetNode = byId.get(targetId);
+    if (!targetNode) continue;
+    const targetLayer = targetNode.layerIndex ?? -1;
+    if (targetNode.kind === "code" || CROSS_KINDS.has(targetNode.kind) || targetLayer > sourceLayer) {
+      targets.add(targetId);
+    }
+  }
+
+  return [...targets];
 }
 
 function sliceIds(rootId: string, nodes: GraphNode[], edges: GraphEdge[]) {

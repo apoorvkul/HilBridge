@@ -4,7 +4,9 @@ The view controller logic derives visible nodes, visible edges, and fixed coordi
 
 ## Responsibilities
 
-- Select all nodes for pyramid mode.
+- Select Vision and Capability nodes for the initial pyramid mode.
+- Track session-only Pyramid expansion state.
+- Reveal direct outgoing lower-layer, code, and cross-cutting targets for expanded Pyramid nodes.
 - Select only one `layerIndex` for plane mode.
 - Traverse outgoing edges to later layers and code for slice mode.
 - Select changed nodes and direct neighbors for commit mode.

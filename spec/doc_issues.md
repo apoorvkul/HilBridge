@@ -11,6 +11,7 @@ This note records implementation gaps, naming drift, and documentation caveats d
 - Hierarchy edges are heuristic: single-parent layers connect to every child, and multi-parent layers use title mentions in child text.
 - Plane and slice views intentionally hide cross-cutting notes after the latest UI change, while the original UI toggle still exists globally.
 - PlantUML is detected and displayed as metadata only; diagrams are not rendered.
+- Progressive 3D Pyramid expansion is implemented in the frontend only. Expansion state is session-only and is not persisted across graph reloads.
 
 ## Ownership and Naming Caveats
 
@@ -31,5 +32,6 @@ This note records implementation gaps, naming drift, and documentation caveats d
 
 - [System Architecture](architecture_notes/System_Architecture.md)
 - [Commit Diff Visualization](capabilities/Commit_Diff_Visualization.md)
+- [Progressive Graph Exploration](capabilities/Progressive_Graph_Exploration.md)
 - [Horizontal Plane Visualization](capabilities/Horizontal_Plane_Visualization.md)
 - [Vertical Slice Traceability](capabilities/Vertical_Slice_Traceability.md)

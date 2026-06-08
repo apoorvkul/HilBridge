@@ -1,14 +1,15 @@
 # 3D Knowledge Graph Visualizer Vision
 
-The app exists to make spec-driven repositories inspectable as a local knowledge graph. It reads markdown notes under a repository `spec/` directory, links those notes to referenced source files, and renders the result as a navigable graph.
+The app exists to make spec-driven repositories inspectable as a local knowledge graph. It reads markdown notes under a repository `spec/` directory, links those notes to referenced source files, and renders the result as a navigable graph that preserves the abstraction gradient from Vision down to Code.
 
-The current implementation supports a 3D pyramid for the full hierarchy, true 2D horizontal planes and vertical slices, GitHub blob navigation, GitHub commit navigation for changed files, search, filtering, and cross-cutting note visibility.
+The product should help humans stay oriented in dense AI-native development graphs. The top of the pyramid should stay sparse and legible, while lower layers can be revealed progressively from user-selected nodes. The current implementation supports a full 3D pyramid, true 2D horizontal planes and vertical slices, GitHub blob navigation, GitHub commit navigation for changed files, search, filtering, and cross-cutting note visibility.
 
 ## Capabilities
 
 - [Repository Loading](capabilities/Repository_Loading.md)
 - [Spec Graph Extraction](capabilities/Spec_Graph_Extraction.md)
 - [3D Pyramid Visualization](capabilities/3D_Pyramid_Visualization.md)
+- [Progressive Graph Exploration](capabilities/Progressive_Graph_Exploration.md)
 - [Horizontal Plane Visualization](capabilities/Horizontal_Plane_Visualization.md)
 - [Vertical Slice Traceability](capabilities/Vertical_Slice_Traceability.md)
 - [GitHub Navigation](capabilities/GitHub_Navigation.md)

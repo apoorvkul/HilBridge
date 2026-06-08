@@ -270,6 +270,54 @@ button:disabled {
   color: var(--danger);
 }
 
+.node-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 24px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(21, 27, 35, 0.92);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.node-action-summary {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.node-action-summary span {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.node-action-summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.node-action-buttons button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
 .graph-canvas {
   min-height: 520px;
   position: relative;
@@ -334,5 +382,14 @@ button:disabled {
   .stage-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .node-action-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .node-action-buttons {
+    justify-content: flex-start;
   }
 }
