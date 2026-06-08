@@ -1,6 +1,6 @@
 # HilBridge
 
-A 2-way context bridge for a faster "Humans In the Loop".
+A 2-way context bridge (AI <-> Human) for a faster "Humans In the Loop".
 
 A local-first TypeScript app for exploring spec-driven repositories as an interactive 3D knowledge graph.
 
