@@ -10,8 +10,10 @@ A graph node represents either a markdown note or a source-code file.
 - `path`: repo-relative file path.
 - `githubUrl`: optional GitHub blob URL.
 - `githubDiffUrl`: optional commit URL for changed nodes.
-- `layerIndex`: optional pyramid layer index.
+- `layerIndex`: optional abstraction-layer index.
 - `changed`: optional commit-diff marker.
+- `changeStatus`: optional commit-diff status, one of `added`, `modified`, `deleted`, `renamed`, `copied`, or `unknown`.
+- `previousPath`: optional previous repo-relative path for renamed or copied files.
 - `hasDiagrams`: optional PlantUML marker.
 - `degree`: optional edge count computed by the backend.
 

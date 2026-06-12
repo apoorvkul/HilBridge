@@ -5,10 +5,13 @@ Commit diff mode uses the same graph endpoint as repository loading, with `commi
 ## Behavior
 
 - The backend builds the normal graph first.
-- The backend runs `git diff-tree --no-commit-id --name-only -r <commitHash>`.
+- The backend runs `git diff-tree --no-commit-id --name-status -r -M <commitHash>`.
 - Matching graph nodes receive `changed: true`.
+- Matching graph nodes receive `changeStatus` when the git status is recognized.
+- Renamed and copied nodes receive `previousPath`.
 - Changed nodes receive `githubDiffUrl` when a GitHub remote is available.
-- Changed source paths without existing nodes become code nodes.
+- Changed paths without existing nodes become placeholder note or code nodes.
+- Deleted placeholder nodes do not reconstruct historical ancestors.
 
 ## Modules
 

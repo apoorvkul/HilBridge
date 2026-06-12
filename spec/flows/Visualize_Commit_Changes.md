@@ -1,6 +1,6 @@
 # Visualize Commit Changes
 
-Commit mode lets the user enter a commit hash. The backend uses `git diff-tree` to identify changed files, marks matching graph nodes, creates missing code nodes for changed source files, and attaches commit URLs.
+Commit mode lets the user enter a commit hash. The backend uses `git diff-tree --name-status` to identify changed files, marks matching graph nodes, records change status metadata, creates missing placeholder nodes for changed files, and attaches commit URLs.
 
 ```plantuml
 @startuml
@@ -11,14 +11,21 @@ participant Graph
 
 UI -> Backend: POST /api/graph(repoPath, commitHash)
 Backend -> Graph: build base graph
-Backend -> Git: git diff-tree --name-only -r commitHash
-Git --> Backend: changed paths
-Backend -> Graph: mark changed nodes
+Backend -> Git: git diff-tree --name-status -r -M commitHash
+Git --> Backend: changed paths and statuses
+Backend -> Graph: mark changed nodes and changeStatus
 Backend -> Graph: add changed_with edges
 Backend --> UI: GraphResponse
-UI -> UI: show changed nodes plus neighbors
+UI -> UI: show changed nodes in layered context
 @enduml
 ```
+
+Changed nodes are rendered in the change-aware layered map with available ancestors, direct descendants, directly connected context, and cross-cutting context. Deleted files may appear as placeholder nodes without reconstructed historical ancestry.
+
+## Capabilities
+
+- [Commit Diff Visualization](../capabilities/Commit_Diff_Visualization.md)
+- [Change-Aware System Understanding](../capabilities/Change_Aware_System_Understanding.md)
 
 ## Modules
 

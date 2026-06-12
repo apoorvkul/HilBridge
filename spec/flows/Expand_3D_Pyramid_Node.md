@@ -1,6 +1,6 @@
 # Expand 3D Pyramid Node
 
-The user selects a node in the 3D Pyramid view and expands direct outgoing targets from that node. The flow keeps the graph readable by revealing only connected lower-layer, code, and cross-cutting nodes.
+The user selects a node in the 3D Pyramid view and expands direct outgoing targets from that node. The flow keeps the graph readable by revealing only connected next-layer nodes.
 
 ## Steps
 
@@ -9,8 +9,8 @@ The user selects a node in the 3D Pyramid view and expands direct outgoing targe
 3. Select a visible Pyramid node.
 4. Show the selected-node action bar.
 5. Expand the selected node.
-6. Add direct outgoing targets that are lower-layer nodes, code nodes, or cross-cutting notes.
-7. Keep unrelated lower-layer nodes hidden.
+6. Add direct outgoing targets whose layer is exactly one step below the selected node.
+7. Keep unrelated or deeper lower-layer nodes hidden.
 8. Allow repeated expansion from newly visible nodes.
 
 ## Capabilities

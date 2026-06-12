@@ -1,6 +1,6 @@
 # Trace Vertical Feature Slice
 
-The user selects a note from the slice root selector. The frontend traverses outgoing edges from that root to later layers and code nodes, then renders the result as a 2D vertical layout.
+The user selects a note from the slice root selector or selects a visible node before entering slice mode. The frontend traverses outgoing edges from that root to later layers and code nodes, then renders the result as a 2D vertical layout with the selected path emphasized as spotlight context.
 
 ```plantuml
 @startuml
@@ -15,9 +15,15 @@ while (queue has node?) is (yes)
   endif
 endwhile (no)
 :Render visible slice edges only;
+:Apply selected-node spotlight styling;
 stop
 @enduml
 ```
+
+## Capabilities
+
+- [Vertical Slice Traceability](../capabilities/Vertical_Slice_Traceability.md)
+- [Progressive Graph Exploration](../capabilities/Progressive_Graph_Exploration.md)
 
 ## Modules
 

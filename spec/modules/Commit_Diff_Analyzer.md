@@ -4,9 +4,10 @@ The commit diff analyzer augments a base graph with changed-file metadata for a 
 
 ## Responsibilities
 
-- Ask git for changed paths.
+- Ask git for changed paths and name-status metadata.
 - Mark existing note or code nodes as changed.
-- Create changed code nodes when changed source files were not already referenced.
+- Create changed placeholder note or code nodes when changed files were not already present in the current graph.
+- Record change status and previous path metadata when available.
 - Assign commit URLs to changed nodes.
 - Connect changed nodes to each other with `changed_with` edges.
 

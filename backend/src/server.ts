@@ -317,38 +317,21 @@ async function markChangedFiles(
   warnings: string[]
 ) {
   try {
-    const { stdout } = await execFileAsync("git", ["diff-tree", "--no-commit-id", "--name-only", "-r", commitHash], {
+    const { stdout } = await execFileAsync("git", ["diff-tree", "--no-commit-id", "--name-status", "-r", "-M", commitHash], {
       cwd: repoPath,
       maxBuffer: 1024 * 1024
     });
-    const changedPaths = stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const changedEntries = parseDiffTreeEntries(stdout);
     const commitUrl = githubCommitUrl(github, commitHash);
 
-    for (const changedPath of changedPaths) {
-      const noteId = `note:${changedPath}`;
-      const codeId = `code:${changedPath}`;
-      let node = nodesById.get(noteId) ?? nodesById.get(codeId);
-      if (!node && !changedPath.startsWith("spec/")) {
-        node = {
-          id: codeId,
-          label: path.basename(changedPath),
-          kind: "code",
-          path: changedPath,
-          githubUrl: githubBlobUrl(github, changedPath),
-          githubDiffUrl: commitUrl,
-          layerIndex: KIND_LAYER.code,
-          changed: true
-        };
-        nodesById.set(node.id, node);
-      }
-
-      if (node) {
-        node.changed = true;
-        node.githubDiffUrl = commitUrl;
-      }
+    for (const entry of changedEntries) {
+      const noteId = `note:${entry.path}`;
+      const codeId = `code:${entry.path}`;
+      const node = nodesById.get(noteId) ?? nodesById.get(codeId) ?? ensureChangedPlaceholderNode(nodesById, entry, github, commitHash);
+      node.changed = true;
+      node.changeStatus = entry.changeStatus;
+      node.previousPath = entry.previousPath;
+      node.githubDiffUrl = commitUrl;
     }
 
     const changedNodes = [...nodesById.values()].filter((node) => node.changed);
@@ -362,6 +345,68 @@ async function markChangedFiles(
     const message = error instanceof Error ? error.message : String(error);
     warnings.push(`Could not inspect commit ${commitHash}: ${message}`);
   }
+}
+
+type ChangedFileEntry = {
+  path: string;
+  previousPath?: string;
+  changeStatus: NonNullable<GraphNode["changeStatus"]>;
+};
+
+function parseDiffTreeEntries(stdout: string): ChangedFileEntry[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [rawStatus, firstPath, secondPath] = line.split(/\t+/);
+      const code = rawStatus.charAt(0);
+      const pathValue = secondPath || firstPath;
+      return {
+        path: pathValue,
+        previousPath: secondPath ? firstPath : undefined,
+        changeStatus: changeStatusForDiffCode(code)
+      };
+    })
+    .filter((entry) => Boolean(entry.path));
+}
+
+function changeStatusForDiffCode(code: string): ChangedFileEntry["changeStatus"] {
+  if (code === "A") return "added";
+  if (code === "M") return "modified";
+  if (code === "D") return "deleted";
+  if (code === "R") return "renamed";
+  if (code === "C") return "copied";
+  return "unknown";
+}
+
+function ensureChangedPlaceholderNode(
+  nodesById: Map<string, GraphNode>,
+  entry: ChangedFileEntry,
+  github: GraphResponse["repo"]["github"],
+  commitHash: string
+): GraphNode {
+  const isSpecNote = /^spec\/.+\.md$/i.test(entry.path) || /^spec\/.+\.markdown$/i.test(entry.path);
+  const id = isSpecNote ? `note:${entry.path}` : `code:${entry.path}`;
+  const existing = nodesById.get(id);
+  if (existing) return existing;
+
+  const specRelativePath = isSpecNote ? entry.path.replace(/^spec\//i, "") : "";
+  const kind = isSpecNote ? inferKind(specRelativePath, {}) : "code";
+  const node: GraphNode = {
+    id,
+    label: isSpecNote ? titleFromFilename(entry.path) : path.basename(entry.path),
+    kind,
+    path: entry.path,
+    githubUrl: entry.changeStatus === "deleted" ? undefined : githubBlobUrl(github, entry.path, commitHash),
+    githubDiffUrl: githubCommitUrl(github, commitHash),
+    layerIndex: KIND_LAYER[kind],
+    changed: true,
+    changeStatus: entry.changeStatus,
+    previousPath: entry.previousPath
+  };
+  nodesById.set(node.id, node);
+  return node;
 }
 
 async function getGitHubInfo(

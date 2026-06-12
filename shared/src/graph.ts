@@ -25,6 +25,8 @@ export type GraphNode = {
   githubDiffUrl?: string;
   layerIndex?: number;
   changed?: boolean;
+  changeStatus?: "added" | "modified" | "deleted" | "renamed" | "copied" | "unknown";
+  previousPath?: string;
   hasDiagrams?: boolean;
   degree?: number;
 };

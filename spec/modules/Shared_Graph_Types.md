@@ -7,6 +7,7 @@ Shared graph types define the wire model used by backend responses and frontend 
 - Define graph node and edge kinds.
 - Define graph request and response payloads.
 - Define GitHub metadata fields.
+- Define optional commit change metadata fields.
 - Define layer and kind labels.
 - Define canonical layer indices.
 

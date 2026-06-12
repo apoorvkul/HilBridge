@@ -6,7 +6,7 @@ The git adapter uses local git commands through `child_process.execFile`.
 
 - Read `origin` with `git remote get-url origin`.
 - Read the current branch with `git rev-parse --abbrev-ref HEAD`.
-- Read changed paths with `git diff-tree --no-commit-id --name-only -r <commitHash>`.
+- Read changed paths and statuses with `git diff-tree --no-commit-id --name-status -r -M <commitHash>`.
 - Return warnings when git metadata cannot be read.
 
 ## Contracts

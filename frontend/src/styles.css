@@ -305,6 +305,15 @@ button:disabled {
   white-space: nowrap;
 }
 
+.node-action-summary small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .node-action-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -318,19 +327,108 @@ button:disabled {
   font-size: 0.78rem;
 }
 
+.node-action-note {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .graph-canvas {
   min-height: 520px;
   position: relative;
   overflow: hidden;
 }
 
-.graph-2d {
-  display: block;
-  width: 100%;
+.graph-canvas-2d {
+  overflow: auto;
+}
+
+.graph-canvas-layered {
+  overflow: hidden;
+}
+
+.graph-layered-frame {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
   height: 100%;
   min-height: 520px;
   background: rgba(16, 20, 26, 0.48);
+}
+
+.graph-layered-scroll {
+  min-width: 0;
+  overflow: auto;
+}
+
+.graph-layered-scroll .graph-2d {
+  background: transparent;
+}
+
+.graph-layer-axis {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: rgba(16, 20, 26, 0.88);
+  box-shadow: 10px 0 24px rgba(0, 0, 0, 0.16);
+}
+
+.graph-layer-axis-label {
+  position: absolute;
+  left: 14px;
+  width: 86px;
+  min-height: 24px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 680;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.graph-layer-axis-label:hover,
+.graph-layer-axis-label.is-active {
+  color: var(--accent);
+}
+
+.graph-layer-axis-label:focus-visible {
+  outline: 2px solid rgba(142, 215, 255, 0.55);
+  outline-offset: 4px;
+}
+
+.graph-2d {
+  display: block;
+  min-height: 520px;
+  background: rgba(16, 20, 26, 0.48);
   cursor: default;
+}
+
+.graph-layer-row {
+  cursor: pointer;
+}
+
+.graph-layer-row line {
+  stroke: rgba(222, 232, 246, 0.12);
+  stroke-width: 1;
+}
+
+.graph-cross-label {
+  fill: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.graph-layer-row:hover line,
+.graph-layer-row.is-active line {
+  stroke: rgba(142, 215, 255, 0.34);
 }
 
 .graph-2d-node {
@@ -341,8 +439,36 @@ button:disabled {
   filter: drop-shadow(0 0 8px rgba(142, 215, 255, 0.64));
 }
 
+.graph-2d-node.is-context {
+  opacity: 0.48;
+}
+
+.graph-2d-node.is-dimmed {
+  opacity: 0.28;
+}
+
+.graph-2d-node.is-spotlight circle,
+.graph-2d-node.is-selected circle {
+  filter: drop-shadow(0 0 10px rgba(142, 215, 255, 0.56));
+}
+
+.graph-2d-node.is-selected circle {
+  stroke: #ffffff;
+  stroke-width: 3px;
+}
+
+.graph-2d-link.is-dimmed {
+  opacity: 0.24;
+}
+
+.graph-2d-link.is-spotlight {
+  opacity: 0.9;
+  stroke-width: 2.2px;
+}
+
 .graph-2d-label,
-.graph-2d-diagram {
+.graph-2d-diagram,
+.graph-2d-badge {
   fill: var(--text);
   paint-order: stroke;
   stroke: rgba(16, 20, 26, 0.92);
@@ -356,6 +482,13 @@ button:disabled {
 
 .graph-2d-diagram {
   font-weight: 900;
+}
+
+.graph-2d-badge {
+  fill: var(--warning);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .empty-state {
