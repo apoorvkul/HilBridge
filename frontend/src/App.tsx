@@ -18,6 +18,7 @@ import {
 type ViewMode = "map" | "pyramid" | "plane" | "slice";
 type Graph2DMode = Extract<ViewMode, "map" | "plane" | "slice">;
 type NodeVisualState = "normal" | "context" | "spotlight" | "dimmed" | "selected";
+type LinkVisualState = "normal" | "spotlight" | "dimmed";
 type PositionedNode = GraphNode & {
   x: number;
   y: number;
@@ -45,10 +46,25 @@ type CommitGraphFilter = {
 const REPO_PATH_STORAGE_KEY = "specGraphVisualizer:lastRepoPath";
 const GRAPH_HEIGHT = 760;
 const GRAPH_ANIMATION_MS = 360;
+const NODE_CLICK_DELAY_MS = 240;
 const LAYER_ROW_GAP = 112;
 const LAYER_NODE_GAP = 210;
 const LAYER_ROW_START_Y = 74;
 const LAYER_VIEWPORT_MIN_WIDTH = 960;
+
+const GRAPH_PALETTE = {
+  nodeChanged: "#ffd84d",
+  nodeChangedEmissive: "#6a4a00",
+  nodeRing: "rgba(255,255,255,0.38)",
+  edgeDefault: "#7084a6",
+  edgeDefaultStrong: "#b9c7da",
+  edgeChanged: "#f97316",
+  edgeChangedStrong: "#ffb86b",
+  edgeDimmed: "#536176",
+  edgeChangedDimmed: "#8f4f1b",
+  label: "#edf3fb",
+  labelChanged: "#fff4b8"
+} as const;
 
 const KIND_COLORS: Record<GraphNodeKind, string> = {
   vision: "#f7f1a2",
@@ -71,6 +87,7 @@ const COMMIT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
 export default function App() {
   const graphRef = useRef<any>(null);
   const layeredScrollRef = useRef<HTMLDivElement>(null);
+  const nodeClickTimerRef = useRef<number | undefined>(undefined);
   const [repoPath, setRepoPath] = useState(() => localStorage.getItem(REPO_PATH_STORAGE_KEY) ?? "");
   const [commitOptions, setCommitOptions] = useState<CommitFilterOption[]>([]);
   const [commitFilterValue, setCommitFilterValue] = useState("");
@@ -79,6 +96,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [selectedLayer, setSelectedLayer] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set());
   const [revealedNodeIds, setRevealedNodeIds] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
@@ -89,6 +107,14 @@ export default function App() {
   const [commitOptionsLoading, setCommitOptionsLoading] = useState(false);
   const [commitOptionsWarning, setCommitOptionsWarning] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const clearPendingNodeClick = () => {
+    if (nodeClickTimerRef.current === undefined) return;
+    window.clearTimeout(nodeClickTimerRef.current);
+    nodeClickTimerRef.current = undefined;
+  };
+
+  useEffect(() => clearPendingNodeClick, []);
 
   const refreshCommitOptions = async (repoPathOverride = repoPath.trim(), selectedValue = commitFilterValue) => {
     if (!repoPathOverride) {
@@ -152,6 +178,7 @@ export default function App() {
       setActiveCommitFilterLabel(selectedFilter.label);
       setGraph(json);
       setSelectedNodeId("");
+      setHoveredNodeId("");
       setExpandedNodeIds(new Set());
       setRevealedNodeIds(new Set());
       void refreshCommitOptions(trimmedRepoPath, filterValue);
@@ -193,6 +220,7 @@ export default function App() {
 
   const graphForViews = graph;
   const diffFilterActive = Boolean(graph?.nodes.some((node) => node.changed));
+  const focusedNodeId = selectedNodeId || hoveredNodeId;
 
   useEffect(() => {
     if (!graphForViews || !selectedNodeId) return;
@@ -222,6 +250,7 @@ export default function App() {
       viewMode,
       selectedLayer,
       selectedNodeId,
+      focusedNodeId,
       expandedNodeIds,
       revealedNodeIds,
       search,
@@ -229,7 +258,19 @@ export default function App() {
       changedOnly,
       diffFilterActive
     });
-  }, [graphForViews, viewMode, selectedLayer, selectedNodeId, expandedNodeIds, revealedNodeIds, search, includeCrossCutting, changedOnly, diffFilterActive]);
+  }, [
+    graphForViews,
+    viewMode,
+    selectedLayer,
+    selectedNodeId,
+    focusedNodeId,
+    expandedNodeIds,
+    revealedNodeIds,
+    search,
+    includeCrossCutting,
+    changedOnly,
+    diffFilterActive
+  ]);
 
   const layeredFocusId = useMemo(() => {
     if (viewMode !== "map") return "";
@@ -263,11 +304,6 @@ export default function App() {
 
   const visibleNodeIds = useMemo(() => new Set(visibleGraph.nodes.map((node) => node.id)), [visibleGraph.nodes]);
 
-  const selectedExpansionTargets = useMemo(() => {
-    if (!graphForViews || !selectedNode) return [];
-    return expansionTargets(selectedNode.id, graphForViews.nodes, graphForViews.edges).filter((id) => !visibleNodeIds.has(id));
-  }, [graphForViews, selectedNode, visibleNodeIds]);
-
   const selectedPeerTargets = useMemo(() => {
     if (!graphForViews || !selectedNode || viewMode !== "plane") return [];
     return sameLayerPeerTargets(selectedNode.id, graphForViews.nodes, graphForViews.edges).filter((id) => !visibleNodeIds.has(id));
@@ -275,16 +311,16 @@ export default function App() {
 
   const hasExploration = expandedNodeIds.size > 0 || revealedNodeIds.size > 0;
 
-  const expandSelectedNode = () => {
-    if (!selectedNode || !selectedExpansionTargets.length) return;
-    setExpandedNodeIds((current) => new Set(current).add(selectedNode.id));
-  };
-
-  const collapseSelectedNode = () => {
-    if (!selectedNode) return;
+  const toggleNodeExpansion = (node: GraphNode) => {
+    if (viewMode !== "map" && viewMode !== "pyramid") return;
+    const targets = graphForViews ? expansionTargets(node.id, graphForViews.nodes, graphForViews.edges) : [];
     setExpandedNodeIds((current) => {
       const next = new Set(current);
-      next.delete(selectedNode.id);
+      if (next.has(node.id)) {
+        next.delete(node.id);
+      } else if (targets.length) {
+        next.add(node.id);
+      }
       return next;
     });
   };
@@ -299,6 +335,7 @@ export default function App() {
   };
 
   const resetExploration = () => {
+    clearPendingNodeClick();
     setSelectedNodeId("");
     setExpandedNodeIds(new Set());
     setRevealedNodeIds(new Set());
@@ -311,12 +348,21 @@ export default function App() {
 
   const selectNode = (node: GraphNode) => {
     setSelectedNodeId(node.id);
-    if (viewMode === "map" || viewMode === "pyramid") {
-      const targets = graphForViews ? expansionTargets(node.id, graphForViews.nodes, graphForViews.edges) : [];
-      if (targets.length) {
-        setExpandedNodeIds((current) => new Set(current).add(node.id));
-      }
+    toggleNodeExpansion(node);
+  };
+
+  const handleNodeClick = (node: GraphNode, clickCount = 1) => {
+    clearPendingNodeClick();
+    if (clickCount > 1) {
+      setSelectedNodeId(node.id);
+      openNode(node);
+      return;
     }
+
+    nodeClickTimerRef.current = window.setTimeout(() => {
+      nodeClickTimerRef.current = undefined;
+      selectNode(node);
+    }, NODE_CLICK_DELAY_MS);
   };
 
   const selectedNodeOptions = useMemo(() => {
@@ -339,7 +385,6 @@ export default function App() {
     ? `${KIND_LABELS[selectedNode.kind]}${selectedNode.changeStatus ? ` · ${changeStatusLabel(selectedNode)}` : ""}`
     : "";
   const actionBarCanOpen = Boolean(selectedNode?.githubUrl || selectedNode?.githubDiffUrl);
-  const hasSelectedCollapse = Boolean(selectedNode && expandedNodeIds.has(selectedNode.id));
   const selectedVisible = Boolean(selectedNode && visibleNodeIds.has(selectedNode.id));
   const selectedNodePath = selectedNode?.previousPath ? `${selectedNode.previousPath} -> ${selectedNode.path}` : selectedNode?.path;
 
@@ -500,12 +545,6 @@ export default function App() {
               {selectedNodePath && <small>{selectedNodePath}</small>}
             </div>
             <div className="node-action-buttons">
-              <button type="button" onClick={expandSelectedNode} disabled={!selectedExpansionTargets.length}>
-                Expand
-              </button>
-              <button type="button" onClick={collapseSelectedNode} disabled={!hasSelectedCollapse}>
-                Collapse
-              </button>
               {viewMode === "plane" && (
                 <button type="button" onClick={expandSelectedPeers} disabled={!selectedPeerTargets.length}>
                   Expand peers
@@ -518,7 +557,10 @@ export default function App() {
               >
                 Open in GitHub
               </button>
-              <button type="button" onClick={() => setSelectedNodeId("")}>
+              <button type="button" onClick={() => {
+                clearPendingNodeClick();
+                setSelectedNodeId("");
+              }}>
                 Clear
               </button>
               {hasExploration && (
@@ -550,7 +592,8 @@ export default function App() {
                       selectedLayer={selectedLayer}
                       viewportWidth={layeredViewportWidth}
                       onLayerClick={openLayerSlice}
-                      onNodeClick={selectNode}
+                      onNodeClick={handleNodeClick}
+                      onNodeHover={setHoveredNodeId}
                     />
                   </div>
                 </div>
@@ -562,7 +605,8 @@ export default function App() {
                   selectedLayer={selectedLayer}
                   viewportWidth={layeredViewportWidth}
                   onLayerClick={openLayerSlice}
-                  onNodeClick={selectNode}
+                  onNodeClick={handleNodeClick}
+                  onNodeHover={setHoveredNodeId}
                 />
               )
             ) : (
@@ -573,14 +617,20 @@ export default function App() {
                 nodeThreeObject={(node) => makeNodeObject(node as PositionedNode)}
                 nodeThreeObjectExtend={false}
                 nodeLabel={(node) => nodeTooltip(node as GraphNode)}
-                linkColor={(link) => linkColor((link as GraphEdge).kind)}
-                linkOpacity={0.52}
-                linkWidth={(link) => ((link as GraphEdge).kind === "changed_with" ? 2.2 : 1)}
-                linkDirectionalParticles={(link) => (((link as GraphEdge).kind === "changed_with" ? 2 : 0))}
+                linkColor={(link) => graphLinkColor(link as GraphEdge, visibleGraph.nodes)}
+                linkOpacity={1}
+                linkWidth={(link) => graphLinkWidth(link as GraphEdge, visibleGraph.nodes)}
+                linkDirectionalParticles={(link) =>
+                  graphLinkVisualState(link as GraphEdge, visibleGraph.nodes) === "spotlight" &&
+                  (link as GraphEdge).kind === "changed_with"
+                    ? 2
+                    : 0
+                }
                 linkDirectionalParticleWidth={2}
-                onNodeClick={(node) => {
-                  selectNode(node as GraphNode);
+                onNodeClick={(node, event) => {
+                  handleNodeClick(node as GraphNode, event.detail);
                 }}
+                onNodeHover={(node) => setHoveredNodeId(node ? (node as GraphNode).id : "")}
                 cooldownTicks={0}
                 enableNodeDrag
               />
@@ -657,6 +707,7 @@ function buildVisibleGraph(
     viewMode: ViewMode;
     selectedLayer: number;
     selectedNodeId: string;
+    focusedNodeId: string;
     expandedNodeIds: Set<string>;
     revealedNodeIds: Set<string>;
     search: string;
@@ -730,7 +781,7 @@ function buildVisibleGraph(
       selectedIds.has(edgeEndpoint(edge.target)) &&
       shouldShowVisibleEdge(edge, byId, options.selectedNodeId)
   );
-  const spotlightIds = spotlightContextIds(options.selectedNodeId, selectedIds, nodes, edges);
+  const spotlightIds = spotlightContextIds(options.focusedNodeId, selectedIds, nodes, edges);
   const positionedNodes = positionNodes(visibleNodes, visibleEdges, options.viewMode, options.selectedLayer, options.selectedNodeId).map((node) => ({
     ...node,
     visualState: visualStateFor(node.id, options.selectedNodeId, spotlightIds, contextIds)
@@ -928,9 +979,6 @@ function spotlightContextIds(selectedNodeId: string, visibleIds: Set<string>, no
   }
   for (const target of expansionTargets(selectedNodeId, nodes, edges)) {
     if (visibleIds.has(target)) spotlight.add(target);
-  }
-  for (const peer of sameLayerPeerTargets(selectedNodeId, nodes, edges)) {
-    if (visibleIds.has(peer)) spotlight.add(peer);
   }
   for (const edge of edges) {
     const source = edgeEndpoint(edge.source);
@@ -1201,7 +1249,8 @@ function Graph2D({
   selectedLayer,
   viewportWidth,
   onLayerClick,
-  onNodeClick
+  onNodeClick,
+  onNodeHover
 }: {
   graph: VisibleGraph;
   mode: Graph2DMode;
@@ -1209,7 +1258,8 @@ function Graph2D({
   selectedLayer: number;
   viewportWidth: number;
   onLayerClick: (layer: number) => void;
-  onNodeClick: (node: GraphNode) => void;
+  onNodeClick: (node: GraphNode, clickCount?: number) => void;
+  onNodeHover: (nodeId: string) => void;
 }) {
   const bounds = graphBounds(graph.nodes, mode, viewportWidth);
   const projectedNodes = useAnimatedProjectedNodes(graph, mode);
@@ -1246,21 +1296,18 @@ function Graph2D({
           const source = projectedNodes.get(edgeEndpoint(edge.source));
           const target = projectedNodes.get(edgeEndpoint(edge.target));
           if (!source || !target) return null;
-          const sourceState = source.node.visualState ?? "normal";
-          const targetState = target.node.visualState ?? "normal";
-          const isDimmed = sourceState === "dimmed" || targetState === "dimmed";
-          const isSpotlight = sourceState === "selected" || targetState === "selected" || sourceState === "spotlight" || targetState === "spotlight";
+          const linkState = linkVisualState(edge, source.node, target.node);
           return (
             <line
               key={edge.id}
-              className={`graph-2d-link ${isDimmed ? "is-dimmed" : ""} ${isSpotlight ? "is-spotlight" : ""}`}
+              className={`graph-2d-link is-${linkState} ${edge.kind === "changed_with" ? "is-changed" : ""}`}
               x1={source.x}
               y1={source.y}
               x2={target.x}
               y2={target.y}
-              stroke={linkColor(edge.kind)}
-              strokeWidth={edge.kind === "changed_with" ? 2.6 : 1.35}
-              strokeOpacity={edge.kind === "hierarchy" ? 0.42 : 0.68}
+              stroke={linkColor(edge.kind, linkState)}
+              strokeWidth={linkWidth(edge.kind, linkState)}
+              strokeLinecap="round"
             />
           );
         })}
@@ -1278,12 +1325,14 @@ function Graph2D({
               key={node.id}
               className={`graph-2d-node is-${state} ${node.id === selectedNodeId ? "is-selected-node" : ""}`}
               transform={`translate(${point.x} ${point.y})`}
-              onClick={() => onNodeClick(node)}
+              onClick={(event) => onNodeClick(node, event.detail)}
+              onMouseEnter={() => onNodeHover(node.id)}
+              onMouseLeave={() => onNodeHover("")}
             >
               <circle
                 r={radius}
-                fill={node.changed ? "#ffdf5d" : KIND_COLORS[node.kind]}
-                stroke={node.hasDiagrams ? "#ffffff" : "rgba(255,255,255,0.34)"}
+                fill={nodeFill(node)}
+                stroke={node.hasDiagrams ? "#ffffff" : GRAPH_PALETTE.nodeRing}
                 strokeWidth={node.hasDiagrams ? 3 : 1.5}
               />
               {node.hasDiagrams && <text className="graph-2d-diagram" x={radius + 7} y={4}>◇</text>}
@@ -1465,9 +1514,13 @@ function spreadLine(nodes: GraphNode[], y: number, width: number, startX?: numbe
 function makeNodeObject(node: PositionedNode) {
   const group = new THREE.Group();
   const geometry = new THREE.SphereGeometry(node.changed ? 8.5 : 6.5, 18, 18);
+  const state = node.visualState ?? "normal";
+  const dimmed = state === "dimmed";
   const material = new THREE.MeshStandardMaterial({
-    color: node.changed ? "#ffdf5d" : KIND_COLORS[node.kind],
-    emissive: node.changed ? "#6b4a00" : "#000000",
+    color: nodeFill(node),
+    emissive: node.changed ? GRAPH_PALETTE.nodeChangedEmissive : "#000000",
+    opacity: dimmed ? 0.34 : 1,
+    transparent: dimmed,
     roughness: 0.55,
     metalness: 0.16
   });
@@ -1484,13 +1537,17 @@ function makeNodeObject(node: PositionedNode) {
   }
 
   const label = new SpriteText(nodeLabel(node));
-  label.color = node.changed ? "#fff7c7" : "#edf3fb";
+  label.color = dimmed ? "#7f8a9a" : node.changed ? GRAPH_PALETTE.labelChanged : GRAPH_PALETTE.label;
   label.textHeight = node.kind === "code" ? 6 : 7.5;
   label.position.y = node.changed ? 15 : 13;
-  label.backgroundColor = "rgba(16,20,26,0.66)";
+  label.backgroundColor = dimmed ? "rgba(16,20,26,0.34)" : "rgba(16,20,26,0.66)";
   label.padding = 2;
   group.add(label);
   return group;
+}
+
+function nodeFill(node: GraphNode) {
+  return node.changed ? GRAPH_PALETTE.nodeChanged : KIND_COLORS[node.kind];
 }
 
 function nodeLabel(node: GraphNode) {
@@ -1562,12 +1619,53 @@ function openNode(node: GraphNode) {
   if (url) window.open(url, "_blank", "noopener,noreferrer");
 }
 
-function linkColor(kind: GraphEdge["kind"]) {
-  if (kind === "changed_with") return "#ffdf5d";
-  if (kind === "source_reference") return "#cfd6df";
-  if (kind === "cross_cutting") return "#ff9bc0";
-  if (kind === "hierarchy") return "#6d7f91";
-  return "#8fb3ff";
+function graphLinkColor(edge: GraphEdge, nodes: PositionedNode[]) {
+  return linkColor(edge.kind, graphLinkVisualState(edge, nodes));
+}
+
+function graphLinkWidth(edge: GraphEdge, nodes: PositionedNode[]) {
+  return linkWidth(edge.kind, graphLinkVisualState(edge, nodes));
+}
+
+function graphLinkVisualState(edge: GraphEdge, nodes: PositionedNode[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const sourceNode = byId.get(edgeEndpoint(edge.source));
+  const targetNode = byId.get(edgeEndpoint(edge.target));
+  if (!sourceNode || !targetNode) return "normal";
+  return linkVisualState(edge, sourceNode, targetNode);
+}
+
+function linkVisualState(edge: GraphEdge, sourceNode: PositionedNode, targetNode: PositionedNode): LinkVisualState {
+  const sourceState = sourceNode.visualState ?? "normal";
+  const targetState = targetNode.visualState ?? "normal";
+  const sourceInNeighborhood = isNeighborhoodNodeState(sourceState);
+  const targetInNeighborhood = isNeighborhoodNodeState(targetState);
+  if (sourceInNeighborhood && targetInNeighborhood) return "spotlight";
+  if (sourceInNeighborhood || targetInNeighborhood || sourceState === "dimmed" || targetState === "dimmed") {
+    return "dimmed";
+  }
+  return "normal";
+}
+
+function isNeighborhoodNodeState(state: NodeVisualState) {
+  return state === "selected" || state === "spotlight";
+}
+
+function linkColor(kind: GraphEdge["kind"], state: LinkVisualState) {
+  if (state === "dimmed") {
+    return kind === "changed_with" ? GRAPH_PALETTE.edgeChangedDimmed : GRAPH_PALETTE.edgeDimmed;
+  }
+  if (kind === "changed_with") {
+    return state === "spotlight" ? GRAPH_PALETTE.edgeChangedStrong : GRAPH_PALETTE.edgeChanged;
+  }
+  return state === "spotlight" ? GRAPH_PALETTE.edgeDefaultStrong : GRAPH_PALETTE.edgeDefault;
+}
+
+function linkWidth(kind: GraphEdge["kind"], state: LinkVisualState) {
+  const base = kind === "changed_with" ? 2.15 : 1.25;
+  if (state === "spotlight") return base + 0.85;
+  if (state === "dimmed") return Math.max(0.8, base - 0.35);
+  return base;
 }
 
 function titleForView(viewMode: ViewMode, layer: number) {

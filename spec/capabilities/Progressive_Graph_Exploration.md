@@ -2,7 +2,7 @@
 
 Users should be able to explore the knowledge graph incrementally instead of starting with the full dense graph. The initial view should show the highest-level system shape so Vision and Capability nodes are immediately legible.
 
-Selecting a node should expand the graph one meaningful layer downward from that node when direct downstream targets exist. The UI should also expose contextual actions to expand or collapse the graph from the selected node. Selection should highlight the node's ancestry, directly visible descendants, and relevant peer or cross-cutting context.
+Selecting a node should highlight it, and clicking or tapping a node in progressive graph views should toggle one meaningful layer of expansion downward from that node when direct downstream targets exist. Repeating the interaction on an expanded node should collapse that local expansion. Selection should highlight the node's ancestry, directly visible descendants, and relevant peer or cross-cutting context.
 
 Expansion reveals only the next meaningful abstraction layer from the selected node while preserving the abstraction direction:
 
@@ -19,7 +19,7 @@ Progressive exploration should work across the main hierarchy and layer-specific
 ## User Guarantees
 
 - The first graph view is readable without manual filtering.
-- Selecting a node reveals its direct meaningful downstream targets when available and makes actions explicit.
+- Clicking or tapping a node reveals its direct meaningful downstream targets when available.
 - Expansion follows the hierarchy one meaningful layer at a time from higher abstraction to lower implementation detail.
 - Modules can reveal direct code references when no explicit contract boundary exists.
 - Collapse lets users reduce local detail after exploring it.

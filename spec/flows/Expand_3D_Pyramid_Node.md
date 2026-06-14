@@ -1,15 +1,15 @@
-# Expand 3D Pyramid Node
+# Toggle 3D Pyramid Node Expansion
 
-The user selects a node in the 3D Pyramid view and expands direct outgoing targets from that node. The flow keeps the graph readable by revealing only connected meaningful downstream nodes.
+The user clicks a node in the 3D Pyramid view to expand or collapse direct outgoing targets from that node. The flow keeps the graph readable by revealing only connected meaningful downstream nodes.
 
 ## Steps
 
 1. Load a graph and enter 3D Pyramid mode.
 2. Render the initial Pyramid with Vision and Capability nodes only.
-3. Select a visible Pyramid node.
+3. Click a visible Pyramid node.
 4. Show the selected-node action bar.
-5. Expand the selected node.
-6. Add direct outgoing targets whose layer is exactly one step below the selected node.
+5. Expand the selected node when it is collapsed, or collapse it when it is already expanded.
+6. Add direct outgoing targets whose layer is exactly one step below the selected node when expanding.
 7. Keep unrelated or deeper lower-layer nodes hidden.
 8. Allow repeated expansion from newly visible nodes.
 

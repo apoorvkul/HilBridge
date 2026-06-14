@@ -7,12 +7,12 @@ The user loads a repository and lands on a 2D layered map. The map starts with V
 1. Load a repository graph.
 2. Render Vision and Capability nodes in fixed horizontal layers with Vision centered in the visible map.
 3. Render directly connected cross-cutting notes in the contextual side area when enabled.
-4. Select a visible node.
-5. Reveal direct next meaningful targets only when the selected node has them.
+4. Click or tap a visible node.
+5. Toggle direct next meaningful targets only when the selected node has them.
 6. Animate nodes and edges into a layout centered around the selected node's ancestor path and visible descendant branch.
 7. Show the shared selected-node action bar.
 8. Select a newly visible target before revealing the layer below it.
-9. Collapse the selected node to reduce local detail.
+9. Click or tap an expanded node again to collapse local detail.
 10. Keep revealed slice discoveries visible with faint ancestor context.
 11. Apply spotlight emphasis around the selected node, ancestors, descendants, peers, and directly connected cross-cutting context.
 12. Render cross-cutting edges only when they connect to the selected node.
