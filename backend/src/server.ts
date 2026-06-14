@@ -2,10 +2,15 @@ import cors from "cors";
 import express from "express";
 import matter from "gray-matter";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
+  CommitFilterOption,
+  CommitOptionsRequest,
+  CommitOptionsResponse,
+  DiffTarget,
   GraphEdge,
   GraphNode,
   GraphNodeKind,
@@ -25,6 +30,30 @@ type ParsedNote = {
   sourceTargets: string[];
 };
 
+type DiffSelection =
+  | {
+      kind: "commit";
+      commitHash: string;
+    }
+  | {
+      kind: "staged";
+    };
+
+type GitHubCommitPayload = {
+  sha?: string;
+  html_url?: string;
+  commit?: {
+    message?: string;
+    author?: {
+      date?: string;
+    };
+    committer?: {
+      date?: string;
+    };
+  };
+};
+type GitHubCommitOption = Extract<CommitFilterOption, { kind: "commit" }>;
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -41,8 +70,23 @@ app.post("/api/graph", async (request, response) => {
       throw new Error("Repository path is required.");
     }
     const repoPath = path.resolve(requestedPath);
-    const graph = await buildGraph(repoPath, body.commitHash?.trim() || undefined);
+    const graph = await buildGraph(repoPath, diffSelectionFromRequest(body));
     response.json(graph);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    response.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/commit-options", async (request, response) => {
+  try {
+    const body = request.body as CommitOptionsRequest;
+    const requestedPath = body.repoPath?.trim();
+    if (!requestedPath) {
+      throw new Error("Repository path is required.");
+    }
+    const repoPath = path.resolve(requestedPath);
+    response.json(await buildCommitOptions(repoPath, body.limit));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     response.status(400).json({ error: message });
@@ -53,7 +97,26 @@ app.listen(PORT, "127.0.0.1", () => {
   console.log(`Spec graph backend listening on http://127.0.0.1:${PORT}`);
 });
 
-async function buildGraph(repoPath: string, commitHash?: string): Promise<GraphResponse> {
+function diffSelectionFromRequest(body: GraphRequest): DiffSelection | undefined {
+  const commitHash = body.commitHash?.trim();
+  const diffTarget = body.diffTarget;
+  if (!diffTarget && commitHash) return { kind: "commit", commitHash };
+  if (!diffTarget) return undefined;
+  if (!isDiffTarget(diffTarget)) {
+    throw new Error(`Unsupported diff target: ${String(diffTarget)}`);
+  }
+  if (diffTarget === "staged") return { kind: "staged" };
+  if (!commitHash) {
+    throw new Error("Commit hash is required for commit diff filtering.");
+  }
+  return { kind: "commit", commitHash };
+}
+
+function isDiffTarget(value: unknown): value is DiffTarget {
+  return value === "commit" || value === "staged";
+}
+
+async function buildGraph(repoPath: string, diffSelection?: DiffSelection): Promise<GraphResponse> {
   const warnings: string[] = [];
   const specPath = path.join(repoPath, "spec");
   const specStats = await statOrNull(specPath);
@@ -61,6 +124,7 @@ async function buildGraph(repoPath: string, commitHash?: string): Promise<GraphR
     throw new Error(`No spec/ directory found at ${specPath}`);
   }
 
+  const commitHash = diffSelection?.kind === "commit" ? diffSelection.commitHash : undefined;
   const github = await getGitHubInfo(repoPath, commitHash, warnings);
   const markdownFiles = await walkFiles(specPath, [".md", ".markdown"]);
   const parsedNotes = await Promise.all(
@@ -110,8 +174,10 @@ async function buildGraph(repoPath: string, commitHash?: string): Promise<GraphR
 
   addFolderHierarchyEdges(parsedNotes, edges, edgeIds);
 
-  if (commitHash) {
-    await markChangedFiles(repoPath, commitHash, nodesById, edges, edgeIds, github, warnings);
+  if (diffSelection?.kind === "commit") {
+    await markChangedFiles(repoPath, diffSelection.commitHash, nodesById, edges, edgeIds, github, warnings);
+  } else if (diffSelection?.kind === "staged") {
+    await markStagedFiles(repoPath, nodesById, edges, edgeIds, github, warnings);
   }
 
   const nodes = Array.from(nodesById.values());
@@ -134,6 +200,113 @@ async function buildGraph(repoPath: string, commitHash?: string): Promise<GraphR
     },
     warnings: unique(warnings).slice(0, 200)
   };
+}
+
+async function buildCommitOptions(repoPath: string, requestedLimit?: number): Promise<CommitOptionsResponse> {
+  const warnings: string[] = [];
+  const github = await getGitHubInfo(repoPath, undefined, warnings);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit ?? 30), 1), 100);
+  const options: CommitFilterOption[] = [];
+  const stagedEntries = await readStagedDiffEntries(repoPath, warnings);
+
+  if (stagedEntries.length) {
+    options.push({ kind: "staged", label: "Staged Local Changes" });
+  }
+
+  options.push(...(await fetchGitHubCommitOptions(repoPath, github, limit, warnings)));
+
+  return {
+    options,
+    repo: {
+      path: repoPath,
+      github
+    },
+    warnings: unique(warnings).slice(0, 200)
+  };
+}
+
+async function fetchGitHubCommitOptions(
+  repoPath: string,
+  github: GraphResponse["repo"]["github"],
+  limit: number,
+  warnings: string[]
+): Promise<CommitFilterOption[]> {
+  if (!github.owner || !github.repo) {
+    warnings.push("Commit options require a recognizable GitHub origin remote.");
+    return [];
+  }
+
+  try {
+    const url = new URL(`https://api.github.com/repos/${github.owner}/${github.repo}/commits`);
+    url.searchParams.set("per_page", String(limit));
+    if (github.branch && github.branch !== "HEAD") {
+      url.searchParams.set("sha", github.branch);
+    }
+
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "spec-graph-visualizer"
+    };
+    if (process.env.GITHUB_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
+
+    const githubResponse = await fetch(url, { headers });
+    if (!githubResponse.ok) {
+      warnings.push(`Could not load GitHub commits: ${githubResponse.status} ${githubResponse.statusText}`);
+      return [];
+    }
+
+    const payload = (await githubResponse.json()) as GitHubCommitPayload[];
+    const commitOptions = payload
+      .map((commit): GitHubCommitOption | undefined => {
+        if (!commit.sha) return undefined;
+        const message = firstCommitMessageLine(commit.commit?.message) || commit.sha.slice(0, 12);
+        const committedAt = commit.commit?.committer?.date ?? commit.commit?.author?.date;
+        if (!committedAt) return undefined;
+        return {
+          kind: "commit",
+          sha: commit.sha,
+          message,
+          committedAt,
+          url: commit.html_url
+        };
+      })
+      .filter(isDefined);
+
+    const localOptions = (
+      await Promise.all(
+        commitOptions.map(async (option) => ((await commitExistsLocally(repoPath, option.sha)) ? option : undefined))
+      )
+    ).filter(isDefined);
+
+    if (commitOptions.length && !localOptions.length) {
+      warnings.push("GitHub commits were found, but none exist in the local checkout.");
+    }
+
+    return localOptions;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.push(`Could not load GitHub commits: ${message}`);
+    return [];
+  }
+}
+
+function firstCommitMessageLine(message?: string): string {
+  return message?.split(/\r?\n/).find((line) => line.trim())?.trim() ?? "";
+}
+
+async function commitExistsLocally(repoPath: string, commitHash: string): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["cat-file", "-e", `${commitHash}^{commit}`], { cwd: repoPath });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }
 
 async function parseNote(
@@ -321,29 +494,72 @@ async function markChangedFiles(
       cwd: repoPath,
       maxBuffer: 1024 * 1024
     });
-    const changedEntries = parseDiffTreeEntries(stdout);
-    const commitUrl = githubCommitUrl(github, commitHash);
-
-    for (const entry of changedEntries) {
-      const noteId = `note:${entry.path}`;
-      const codeId = `code:${entry.path}`;
-      const node = nodesById.get(noteId) ?? nodesById.get(codeId) ?? ensureChangedPlaceholderNode(nodesById, entry, github, commitHash);
-      node.changed = true;
-      node.changeStatus = entry.changeStatus;
-      node.previousPath = entry.previousPath;
-      node.githubDiffUrl = commitUrl;
-    }
-
-    const changedNodes = [...nodesById.values()].filter((node) => node.changed);
-    for (let index = 0; index < changedNodes.length; index += 1) {
-      const node = changedNodes[index];
-      for (const other of changedNodes.slice(index + 1)) {
-        addEdge(edges, edgeIds, node.id, other.id, "changed_with");
-      }
-    }
+    applyChangedEntries(parseDiffTreeEntries(stdout), nodesById, edges, edgeIds, github, commitHash);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warnings.push(`Could not inspect commit ${commitHash}: ${message}`);
+  }
+}
+
+async function markStagedFiles(
+  repoPath: string,
+  nodesById: Map<string, GraphNode>,
+  edges: GraphEdge[],
+  edgeIds: Set<string>,
+  github: GraphResponse["repo"]["github"],
+  warnings: string[]
+) {
+  const changedEntries = await readStagedDiffEntries(repoPath, warnings);
+  if (!changedEntries.length) {
+    warnings.push("No staged changes found.");
+  }
+  applyChangedEntries(changedEntries, nodesById, edges, edgeIds, github);
+}
+
+async function readStagedDiffEntries(repoPath: string, warnings: string[]): Promise<ChangedFileEntry[]> {
+  try {
+    const { stdout } = await execFileAsync("git", ["diff", "--cached", "--name-status", "-M"], {
+      cwd: repoPath,
+      maxBuffer: 1024 * 1024
+    });
+    return parseDiffTreeEntries(stdout);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.push(`Could not inspect staged changes: ${message}`);
+    return [];
+  }
+}
+
+function applyChangedEntries(
+  changedEntries: ChangedFileEntry[],
+  nodesById: Map<string, GraphNode>,
+  edges: GraphEdge[],
+  edgeIds: Set<string>,
+  github: GraphResponse["repo"]["github"],
+  commitHash?: string
+) {
+  const commitUrl = commitHash ? githubCommitUrl(github, commitHash) : undefined;
+
+  for (const entry of changedEntries) {
+    const noteId = `note:${entry.path}`;
+    const codeId = `code:${entry.path}`;
+    const node = nodesById.get(noteId) ?? nodesById.get(codeId) ?? ensureChangedPlaceholderNode(nodesById, entry, github, commitHash);
+    node.changed = true;
+    node.changeStatus = entry.changeStatus;
+    node.previousPath = entry.previousPath;
+    if (commitHash) {
+      node.githubDiffUrl = githubCommitFileDiffUrl(github, commitHash, entry.path) ?? commitUrl;
+    } else {
+      delete node.githubDiffUrl;
+    }
+  }
+
+  const changedNodes = [...nodesById.values()].filter((node) => node.changed);
+  for (let index = 0; index < changedNodes.length; index += 1) {
+    const node = changedNodes[index];
+    for (const other of changedNodes.slice(index + 1)) {
+      addEdge(edges, edgeIds, node.id, other.id, "changed_with");
+    }
   }
 }
 
@@ -384,7 +600,7 @@ function ensureChangedPlaceholderNode(
   nodesById: Map<string, GraphNode>,
   entry: ChangedFileEntry,
   github: GraphResponse["repo"]["github"],
-  commitHash: string
+  commitHash?: string
 ): GraphNode {
   const isSpecNote = /^spec\/.+\.md$/i.test(entry.path) || /^spec\/.+\.markdown$/i.test(entry.path);
   const id = isSpecNote ? `note:${entry.path}` : `code:${entry.path}`;
@@ -398,8 +614,8 @@ function ensureChangedPlaceholderNode(
     label: isSpecNote ? titleFromFilename(entry.path) : path.basename(entry.path),
     kind,
     path: entry.path,
-    githubUrl: entry.changeStatus === "deleted" ? undefined : githubBlobUrl(github, entry.path, commitHash),
-    githubDiffUrl: githubCommitUrl(github, commitHash),
+    githubUrl: entry.changeStatus === "deleted" && commitHash ? undefined : githubBlobUrl(github, entry.path, commitHash),
+    githubDiffUrl: commitHash ? githubCommitFileDiffUrl(github, commitHash, entry.path) : undefined,
     layerIndex: KIND_LAYER[kind],
     changed: true,
     changeStatus: entry.changeStatus,
@@ -477,6 +693,20 @@ function githubBlobUrl(github: GraphResponse["repo"]["github"], relativePath: st
 function githubCommitUrl(github: GraphResponse["repo"]["github"], commitHash: string): string | undefined {
   if (!github.webUrl) return undefined;
   return `${github.webUrl}/commit/${encodeURIComponent(commitHash)}`;
+}
+
+function githubCommitFileDiffUrl(
+  github: GraphResponse["repo"]["github"],
+  commitHash: string,
+  relativePath: string
+): string | undefined {
+  const commitUrl = githubCommitUrl(github, commitHash);
+  if (!commitUrl) return undefined;
+  return `${commitUrl}#diff-${sha256Hex(relativePath)}`;
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function addEdge(

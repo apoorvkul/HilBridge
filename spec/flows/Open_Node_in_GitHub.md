@@ -5,7 +5,7 @@ The user clicks a graph node. If the node is changed and has `githubDiffUrl`, th
 ## Steps
 
 1. Node click calls `openNode`.
-2. Prefer `githubDiffUrl` for changed nodes.
+2. Prefer `githubDiffUrl` for changed nodes, which points to the selected file's diff section on the GitHub commit page when available.
 3. Fallback to `githubUrl`.
 4. Open the URL in a new browser tab with `noopener,noreferrer`.
 

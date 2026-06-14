@@ -117,6 +117,13 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(142, 215, 255, 0.12);
 }
 
+.field-note {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 button {
   min-height: 38px;
   padding: 8px 13px;

@@ -1,6 +1,6 @@
 # Explore Layered Understanding Map
 
-The user loads a repository and lands on a 2D layered map. The map starts with Vision, Capabilities, and directly connected cross-cutting context, then reveals lower layers only when the user expands selected nodes.
+The user loads a repository and lands on a 2D layered map. The map starts with Vision, Capabilities, and directly connected cross-cutting context, then reveals lower meaningful layers only when the user expands selected nodes.
 
 ## Steps
 
@@ -8,15 +8,17 @@ The user loads a repository and lands on a 2D layered map. The map starts with V
 2. Render Vision and Capability nodes in fixed horizontal layers with Vision centered in the visible map.
 3. Render directly connected cross-cutting notes in the contextual side area when enabled.
 4. Select a visible node.
-5. Reveal direct next-layer targets only when the selected node has them.
+5. Reveal direct next meaningful targets only when the selected node has them.
 6. Animate nodes and edges into a layout centered around the selected node's ancestor path and visible descendant branch.
 7. Show the shared selected-node action bar.
-8. Select a newly visible next-layer node before revealing the layer below it.
+8. Select a newly visible target before revealing the layer below it.
 9. Collapse the selected node to reduce local detail.
 10. Keep revealed slice discoveries visible with faint ancestor context.
 11. Apply spotlight emphasis around the selected node, ancestors, descendants, peers, and directly connected cross-cutting context.
 12. Render cross-cutting edges only when they connect to the selected node.
 13. Clear cross-cutting edges as soon as the node selection is cleared.
+
+When the selected node is a module, expansion can reveal both explicit contract nodes and direct code references. Direct code references are valid when no separate contract boundary exists for that implementation path.
 
 ## Capabilities
 

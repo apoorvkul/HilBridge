@@ -1,6 +1,6 @@
 # Graph Visualization UI
 
-This module renders visible graph data in either 3D or 2D. Pyramid mode uses `ForceGraph3D`; layered map, plane, slice, and commit modes use an inline SVG renderer.
+This module renders visible graph data in either 3D or 2D. Pyramid mode uses `ForceGraph3D`; layered map, plane, and slice modes use an inline SVG renderer.
 
 ## Responsibilities
 

@@ -1,8 +1,8 @@
 # Layered Understanding Map
 
-Users can inspect the repository graph as a 2D layered understanding map. Vision appears at the top, capabilities spread across the next horizontal layer, and lower layers continue downward through flows, modules, contracts, and code.
+Users can inspect the repository graph as a 2D layered understanding map. Vision appears at the top, capabilities spread across the next horizontal layer, and lower layers continue downward through flows, modules, optional contracts, and code.
 
-The map should privilege human comprehension over complete graph density. It should start with the highest-level system shape and let the user progressively expand selected nodes downward. Selecting a node reveals directly related next-layer nodes while preserving visible ancestry so users can understand where each detail fits.
+The map should privilege human comprehension over complete graph density. It should start with the highest-level system shape and let the user progressively expand selected nodes downward. Selecting a node reveals directly related meaningful downstream nodes while preserving visible ancestry so users can understand where each detail fits.
 
 The visible hierarchy should stay visually centered around the current focus. With no selection, Vision is centered in the visible map. When a user selects and expands a node, the selected node, its ancestor path, and its visible descendant branch form a centered visual spine while peer context remains available around it. Nodes and edges should animate into their new positions so the rearrangement explains itself instead of feeling like a jump cut.
 
@@ -15,7 +15,8 @@ Cross-cutting notes should remain discoverable beside the main hierarchy or in a
 ## User Guarantees
 
 - Users can build a mental model from high-level design before inspecting implementation detail.
-- Expansion follows the abstraction direction from Vision toward Code one layer at a time.
+- Expansion follows the abstraction direction from Vision toward Code one meaningful layer at a time.
+- The map can show module-to-code traceability directly when a separate contract layer would not add useful boundary meaning.
 - Selecting a node preserves orientation by showing ancestry and nearby context.
 - The focused branch remains centered enough that users do not need to manually pan after every expansion.
 - Layout changes animate smoothly, while respecting reduced-motion preferences.

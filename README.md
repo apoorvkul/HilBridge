@@ -51,13 +51,13 @@ spec/Vision.md                         -> Vision
 spec/capabilities/*.md                 -> Capability
 spec/flows/*.md                        -> Flow
 spec/modules/*.md                      -> Module
-spec/contracts/*.md                    -> State/Data/Sync Contract
+spec/contracts/*.md                    -> State/Data/API Contract
 spec/architecture_notes/*.md           -> Architecture Note
 spec/domain_notes/*.md                 -> Domain Note
 spec/technology_notes/*.md             -> Technology Note
 ```
 
-Source files referenced by notes become `Code` nodes at the bottom of the graph.
+Source files referenced by notes become `Code` nodes at the bottom of the graph. Contract notes are optional boundary nodes; module notes can link directly to code when no separate contract is useful.
 
 Frontmatter is optional. When present, `title`, `name`, `kind`, or `type` are used as hints. Without frontmatter, the parser falls back to the first `# Heading` and then the file name.
 
@@ -102,25 +102,32 @@ Contracts
 Code
 ```
 
-The map starts with Vision, Capabilities, and directly connected cross-cutting context. Cross-cutting notes stay disconnected until a node is selected; then only that selected node's cross-cutting edges are shown. Selecting a node expands exactly one next layer when available, animates the visible tree around that focus branch, and acts as a spotlight for ancestry, descendants, and peers.
+Contracts are optional in a path; a module can expand to both contract nodes and direct code references. The map starts with Vision, Capabilities, and directly connected cross-cutting context. Cross-cutting notes stay disconnected until a node is selected; then only that selected node's cross-cutting edges are shown. Selecting a node expands exactly one meaningful downstream layer when available, animates the visible tree around that focus branch, and acts as a spotlight for ancestry, descendants, and peers.
 
 **Horizontal Plane** shows one selected layer from the currently revealed map subset as a true 2D peer graph. Click a layer label in the layered map to open that layer. Selecting a node in the plane can expand same-layer peers, and those discoveries remain visible when you return to the layered map.
 
-**Vertical Slice** starts from a selected note and follows outgoing relationships down toward modules, contracts, and code as a true 2D graph with selected-path spotlight context.
+**Vertical Slice** starts from a selected note and follows outgoing relationships down toward modules, optional contracts, and code as a true 2D graph with selected-path spotlight context.
 
 **3D Pyramid** remains available as an alternate overview of the stacked hierarchy.
 
-**Commit Diff** accepts a commit hash, runs:
+**Commit Filter** presents a dropdown of recent GitHub commits using commit messages plus date/time. The backend fetches commit metadata from the selected repository's GitHub origin and filters options to commits that exist in the local checkout. Set `GITHUB_TOKEN` before starting the backend when private repositories or higher GitHub API rate limits are needed.
 
 ```bash
 git diff-tree --no-commit-id --name-status -r -M <commitHash>
 ```
 
-Changed markdown and source nodes are highlighted in the layered map with available ancestors, direct descendants, directly connected context, and change-status badges. Clicking **Open in GitHub** for a changed node opens the GitHub commit URL.
+When local staged changes exist, the dropdown also includes `Staged Local Changes`, backed by:
+
+```bash
+git diff --cached --name-status -M
+```
+
+The commit filter applies to every view. It keeps files touched by the selected commit or staged diff plus upstream nodes that connect those changed nodes back toward Vision, then lets the selected view render that filtered graph. Visible changed nodes show change-status badges. Clicking **Open in GitHub** for a committed changed node opens the GitHub commit page at that file's diff section when GitHub supports the file anchor.
 
 ## Current Limitations
 
-- Commit diff clicks open the commit page, not precise file diff anchors.
+- Commit-filtered clicks scroll to the selected file's diff on the commit page; GitHub still shows the full commit around that file.
+- Staged local changes do not have commit diff URLs until they are committed.
 - Deleted-file commit placeholders do not reconstruct historical hierarchy.
 - Hierarchy edges are best-effort and inferred from links, layers, and title mentions.
 - Source references are pattern-matched from markdown text; very unusual file names may be missed.

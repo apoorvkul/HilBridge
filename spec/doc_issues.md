@@ -4,8 +4,8 @@ This note records implementation gaps, naming drift, and documentation caveats d
 
 ## Implementation Gaps
 
-- Commit diff node clicks open the commit URL, not a file-specific diff anchor.
-- Commit mode shows changed nodes and direct neighbors in the frontend, but the backend also creates complete pairwise `changed_with` edges between changed nodes; this can become dense for large commits.
+- Commit-filtered node clicks use GitHub file anchors, but GitHub still renders the full commit page around the selected file diff.
+- The backend creates complete pairwise `changed_with` edges between changed nodes; this can become dense for large commits even though the commit filter now feeds progressive exploration instead of a separate view.
 - Deleted commit placeholder nodes do not reconstruct historical hierarchy or ancestry from the deleted file contents.
 - Source-reference detection is regex-based and may miss unusual paths or include false positives from prose.
 - Code nodes are created for referenced paths without verifying file existence; `ensureCodeNode` calls `statOrNull` but does not use the result.
@@ -19,7 +19,7 @@ This note records implementation gaps, naming drift, and documentation caveats d
 - Most backend responsibilities live in one file, `backend/src/server.ts`.
 - Most frontend responsibilities live in one file, `frontend/src/App.tsx`.
 - The UI calls the contracts layer `Contracts`, while this spec describes the layer as State, Data & Graph Contracts.
-- `Commit Diff Visualization` is implemented as commit-level navigation rather than file-anchor navigation.
+- `Commit Diff Visualization` relies on GitHub commit-page file anchors rather than a file-only diff page.
 
 ## Documentation Gaps
 
@@ -28,6 +28,7 @@ This note records implementation gaps, naming drift, and documentation caveats d
 - The README does not describe the new self-hosting `spec/` directory yet.
 - Self-hosting verification on `/Users/apoorvkul/Projects/xfer` succeeded after these docs were added: the API returned 61 nodes, 239 edges, 65 source-reference edges, 20 code nodes, no orphan documents, and Vision reached code nodes.
 - A later self-hosting verification after connecting the GitHub remote and adding username-qualified HTTPS remote parsing returned no warnings.
+- Some lower-level module and contract docs still use the layer name `Contracts`; this remains a display layer name even though contract nodes are optional on module-to-code traceability paths.
 
 ## Resolved Product Questions
 

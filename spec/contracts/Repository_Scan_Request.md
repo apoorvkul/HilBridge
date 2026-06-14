@@ -5,7 +5,8 @@ The frontend sends a repository scan request to `POST /api/graph`.
 ## Fields
 
 - `repoPath`: required local repository path. The frontend and backend both trim it.
-- `commitHash`: optional commit hash, supplied only in commit diff mode.
+- `diffTarget`: optional diff target, either `commit` or `staged`.
+- `commitHash`: optional commit hash, supplied when `diffTarget` is `commit`.
 
 ## Modules
 

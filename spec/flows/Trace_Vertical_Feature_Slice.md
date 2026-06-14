@@ -1,6 +1,6 @@
 # Trace Vertical Feature Slice
 
-The user selects a note from the slice root selector or selects a visible node before entering slice mode. The frontend traverses outgoing edges from that root to later layers and code nodes, then renders the result as a 2D vertical layout with the selected path emphasized as spotlight context.
+The user selects a note from the slice root selector or selects a visible node before entering slice mode. The frontend traverses outgoing edges from that root to later meaningful layers and code nodes, then renders the result as a 2D vertical layout with the selected path emphasized as spotlight context. A path can pass through contracts or move directly from modules to code when no explicit contract boundary is represented.
 
 ```plantuml
 @startuml

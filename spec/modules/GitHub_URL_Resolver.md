@@ -16,7 +16,7 @@ endif
 :Read current branch;
 :Build blob URLs for nodes;
 if (commit hash present?) then (yes)
-  :Build commit URL for changed nodes;
+  :Build commit URL with file diff anchors for changed nodes;
 endif
 stop
 @enduml

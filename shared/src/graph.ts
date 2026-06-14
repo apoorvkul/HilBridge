@@ -58,9 +58,39 @@ export type GraphResponse = {
   warnings: string[];
 };
 
+export type DiffTarget = "commit" | "staged";
+
 export type GraphRequest = {
   repoPath: string;
+  diffTarget?: DiffTarget;
   commitHash?: string;
+};
+
+export type CommitFilterOption =
+  | {
+      kind: "staged";
+      label: "Staged Local Changes";
+    }
+  | {
+      kind: "commit";
+      sha: string;
+      message: string;
+      committedAt: string;
+      url?: string;
+    };
+
+export type CommitOptionsRequest = {
+  repoPath: string;
+  limit?: number;
+};
+
+export type CommitOptionsResponse = {
+  options: CommitFilterOption[];
+  repo: {
+    path: string;
+    github: GitHubInfo;
+  };
+  warnings: string[];
 };
 
 export const LAYER_LABELS = [

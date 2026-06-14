@@ -1,6 +1,6 @@
 # Expand 3D Pyramid Node
 
-The user selects a node in the 3D Pyramid view and expands direct outgoing targets from that node. The flow keeps the graph readable by revealing only connected next-layer nodes.
+The user selects a node in the 3D Pyramid view and expands direct outgoing targets from that node. The flow keeps the graph readable by revealing only connected meaningful downstream nodes.
 
 ## Steps
 

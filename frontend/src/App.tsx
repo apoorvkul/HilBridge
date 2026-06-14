@@ -3,6 +3,9 @@ import SpriteText from "three-spritetext";
 import * as THREE from "three";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CommitFilterOption,
+  CommitOptionsResponse,
+  DiffTarget,
   GraphEdge,
   GraphNode,
   GraphNodeKind,
@@ -12,8 +15,8 @@ import {
   LAYER_LABELS
 } from "../../shared/src/graph";
 
-type ViewMode = "map" | "pyramid" | "plane" | "slice" | "commit";
-type Graph2DMode = Extract<ViewMode, "map" | "plane" | "slice" | "commit">;
+type ViewMode = "map" | "pyramid" | "plane" | "slice";
+type Graph2DMode = Extract<ViewMode, "map" | "plane" | "slice">;
 type NodeVisualState = "normal" | "context" | "spotlight" | "dimmed" | "selected";
 type PositionedNode = GraphNode & {
   x: number;
@@ -32,6 +35,11 @@ type VisibleGraph = {
 type GraphPoint = {
   x: number;
   y: number;
+};
+type CommitGraphFilter = {
+  diffTarget?: DiffTarget;
+  commitHash?: string;
+  label: string;
 };
 
 const REPO_PATH_STORAGE_KEY = "specGraphVisualizer:lastRepoPath";
@@ -55,12 +63,18 @@ const KIND_COLORS: Record<GraphNodeKind, string> = {
 };
 
 const CROSS_KINDS = new Set<GraphNodeKind>(["architecture_note", "domain_note", "technology_note"]);
+const COMMIT_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short"
+});
 
 export default function App() {
   const graphRef = useRef<any>(null);
   const layeredScrollRef = useRef<HTMLDivElement>(null);
   const [repoPath, setRepoPath] = useState(() => localStorage.getItem(REPO_PATH_STORAGE_KEY) ?? "");
-  const [commitHash, setCommitHash] = useState("");
+  const [commitOptions, setCommitOptions] = useState<CommitFilterOption[]>([]);
+  const [commitFilterValue, setCommitFilterValue] = useState("");
+  const [activeCommitFilterLabel, setActiveCommitFilterLabel] = useState("");
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [selectedLayer, setSelectedLayer] = useState(1);
@@ -72,9 +86,44 @@ export default function App() {
   const [changedOnly, setChangedOnly] = useState(false);
   const [layeredViewportWidth, setLayeredViewportWidth] = useState(960);
   const [loading, setLoading] = useState(false);
+  const [commitOptionsLoading, setCommitOptionsLoading] = useState(false);
+  const [commitOptionsWarning, setCommitOptionsWarning] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const loadGraph = async () => {
+  const refreshCommitOptions = async (repoPathOverride = repoPath.trim(), selectedValue = commitFilterValue) => {
+    if (!repoPathOverride) {
+      setCommitOptions([]);
+      setCommitOptionsWarning("");
+      return;
+    }
+
+    setCommitOptionsLoading(true);
+    setCommitOptionsWarning("");
+    try {
+      const response = await fetch("/api/commit-options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoPath: repoPathOverride })
+      });
+      const json = (await response.json()) as CommitOptionsResponse & { error?: string };
+      if (!response.ok) throw new Error(json.error ?? "Could not load commit options");
+      setCommitOptions(json.options);
+      setCommitOptionsWarning(json.warnings.slice(0, 2).join(" · "));
+
+      const optionValues = new Set(json.options.map(commitFilterOptionValue));
+      if (selectedValue && !optionValues.has(selectedValue)) {
+        setCommitFilterValue("");
+        setActiveCommitFilterLabel("");
+      }
+    } catch (requestError) {
+      setCommitOptions([]);
+      setCommitOptionsWarning(requestError instanceof Error ? requestError.message : String(requestError));
+    } finally {
+      setCommitOptionsLoading(false);
+    }
+  };
+
+  const loadGraph = async (filterValue = commitFilterValue) => {
     const trimmedRepoPath = repoPath.trim();
     if (!trimmedRepoPath) {
       setError("Enter a repository path to load a graph.");
@@ -82,26 +131,30 @@ export default function App() {
       return;
     }
 
+    const selectedFilter = commitFilterFromValue(filterValue, commitOptions);
     setLoading(true);
     setError(null);
     try {
       const payload: GraphRequest = {
         repoPath: trimmedRepoPath,
-        commitHash: viewMode === "commit" && commitHash.trim() ? commitHash.trim() : undefined
+        diffTarget: selectedFilter.diffTarget,
+        commitHash: selectedFilter.commitHash
       };
       const response = await fetch("/api/graph", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const json = await response.json();
+      const json = (await response.json()) as GraphResponse & { error?: string };
       if (!response.ok) throw new Error(json.error ?? "Could not load graph");
       localStorage.setItem(REPO_PATH_STORAGE_KEY, trimmedRepoPath);
       setRepoPath(trimmedRepoPath);
+      setActiveCommitFilterLabel(selectedFilter.label);
       setGraph(json);
       setSelectedNodeId("");
       setExpandedNodeIds(new Set());
       setRevealedNodeIds(new Set());
+      void refreshCommitOptions(trimmedRepoPath, filterValue);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : String(requestError));
     } finally {
@@ -109,8 +162,27 @@ export default function App() {
     }
   };
 
+  const clearCommitFilter = () => {
+    setCommitFilterValue("");
+    setActiveCommitFilterLabel("");
+    void loadGraph("");
+  };
+
+  const handleRepoPathChange = (value: string) => {
+    setRepoPath(value);
+    setCommitOptions([]);
+    setCommitFilterValue("");
+    setActiveCommitFilterLabel("");
+    setCommitOptionsWarning("");
+  };
+
+  const handleCommitFilterChange = (value: string) => {
+    setCommitFilterValue(value);
+    void loadGraph(value);
+  };
+
   useEffect(() => {
-    if (repoPath.trim()) void loadGraph();
+    if (repoPath.trim()) void loadGraph("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -119,15 +191,18 @@ export default function App() {
     graphRef.current?.cameraPosition({ x: 0, y: 90, z: 760 }, { x: 0, y: 0, z: 0 }, 600);
   }, [viewMode, selectedLayer, selectedNodeId, graph]);
 
-  useEffect(() => {
-    if (!graph || !selectedNodeId) return;
-    if (!graph.nodes.some((node) => node.id === selectedNodeId)) {
-      setSelectedNodeId("");
-    }
-  }, [graph, selectedNodeId]);
+  const graphForViews = useMemo(() => filterGraphForCommit(graph), [graph]);
+  const diffFilterActive = Boolean(graph?.nodes.some((node) => node.changed));
 
   useEffect(() => {
-    if (viewMode !== "map" && viewMode !== "commit") return;
+    if (!graphForViews || !selectedNodeId) return;
+    if (!graphForViews.nodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId("");
+    }
+  }, [graphForViews, selectedNodeId]);
+
+  useEffect(() => {
+    if (viewMode !== "map") return;
     const container = layeredScrollRef.current;
     if (!container) return;
 
@@ -142,8 +217,8 @@ export default function App() {
   }, [viewMode]);
 
   const visibleGraph = useMemo(() => {
-    if (!graph) return { nodes: [], links: [] } satisfies VisibleGraph;
-    return buildVisibleGraph(graph.nodes, graph.edges, {
+    if (!graphForViews) return { nodes: [], links: [] } satisfies VisibleGraph;
+    return buildVisibleGraph(graphForViews.nodes, graphForViews.edges, {
       viewMode,
       selectedLayer,
       selectedNodeId,
@@ -153,10 +228,10 @@ export default function App() {
       includeCrossCutting,
       changedOnly
     });
-  }, [graph, viewMode, selectedLayer, selectedNodeId, expandedNodeIds, revealedNodeIds, search, includeCrossCutting, changedOnly]);
+  }, [graphForViews, viewMode, selectedLayer, selectedNodeId, expandedNodeIds, revealedNodeIds, search, includeCrossCutting, changedOnly]);
 
   const layeredFocusId = useMemo(() => {
-    if (viewMode !== "map" && viewMode !== "commit") return "";
+    if (viewMode !== "map") return "";
     const selectedVisibleNode = visibleGraph.nodes.find(
       (node) => node.id === selectedNodeId && node.layerIndex !== undefined
     );
@@ -169,7 +244,7 @@ export default function App() {
   }, [selectedNodeId, viewMode, visibleGraph.nodes]);
 
   useEffect(() => {
-    if (viewMode !== "map" && viewMode !== "commit") return;
+    if (viewMode !== "map") return;
     const container = layeredScrollRef.current;
     const focusNode = visibleGraph.nodes.find((node) => node.id === layeredFocusId);
     if (!container || !focusNode) return;
@@ -181,21 +256,21 @@ export default function App() {
   }, [layeredFocusId, layeredViewportWidth, viewMode, visibleGraph.nodes]);
 
   const selectedNode = useMemo(() => {
-    if (!graph || !selectedNodeId) return undefined;
-    return graph.nodes.find((node) => node.id === selectedNodeId);
-  }, [graph, selectedNodeId]);
+    if (!graphForViews || !selectedNodeId) return undefined;
+    return graphForViews.nodes.find((node) => node.id === selectedNodeId);
+  }, [graphForViews, selectedNodeId]);
 
   const visibleNodeIds = useMemo(() => new Set(visibleGraph.nodes.map((node) => node.id)), [visibleGraph.nodes]);
 
   const selectedExpansionTargets = useMemo(() => {
-    if (!graph || !selectedNode) return [];
-    return expansionTargets(selectedNode.id, graph.nodes, graph.edges).filter((id) => !visibleNodeIds.has(id));
-  }, [graph, selectedNode, visibleNodeIds]);
+    if (!graphForViews || !selectedNode) return [];
+    return expansionTargets(selectedNode.id, graphForViews.nodes, graphForViews.edges).filter((id) => !visibleNodeIds.has(id));
+  }, [graphForViews, selectedNode, visibleNodeIds]);
 
   const selectedPeerTargets = useMemo(() => {
-    if (!graph || !selectedNode || viewMode !== "plane") return [];
-    return sameLayerPeerTargets(selectedNode.id, graph.nodes, graph.edges).filter((id) => !visibleNodeIds.has(id));
-  }, [graph, selectedNode, viewMode, visibleNodeIds]);
+    if (!graphForViews || !selectedNode || viewMode !== "plane") return [];
+    return sameLayerPeerTargets(selectedNode.id, graphForViews.nodes, graphForViews.edges).filter((id) => !visibleNodeIds.has(id));
+  }, [graphForViews, selectedNode, viewMode, visibleNodeIds]);
 
   const hasExploration = expandedNodeIds.size > 0 || revealedNodeIds.size > 0;
 
@@ -235,8 +310,8 @@ export default function App() {
 
   const selectNode = (node: GraphNode) => {
     setSelectedNodeId(node.id);
-    if (viewMode === "map" || viewMode === "pyramid" || viewMode === "commit") {
-      const targets = graph ? expansionTargets(node.id, graph.nodes, graph.edges) : [];
+    if (viewMode === "map" || viewMode === "pyramid") {
+      const targets = graphForViews ? expansionTargets(node.id, graphForViews.nodes, graphForViews.edges) : [];
       if (targets.length) {
         setExpandedNodeIds((current) => new Set(current).add(node.id));
       }
@@ -244,20 +319,20 @@ export default function App() {
   };
 
   const selectedNodeOptions = useMemo(() => {
-    return (graph?.nodes ?? [])
+    return (graphForViews?.nodes ?? [])
       .filter((node) => node.kind !== "code")
       .sort((a, b) => kindSort(a) - kindSort(b) || a.label.localeCompare(b.label));
-  }, [graph]);
+  }, [graphForViews]);
 
   const stats = useMemo(() => {
-    const changed = graph?.nodes.filter((node) => node.changed).length ?? 0;
+    const changed = graphForViews?.nodes.filter((node) => node.changed).length ?? 0;
     return {
-      nodes: graph?.nodes.length ?? 0,
-      edges: graph?.edges.length ?? 0,
+      nodes: graphForViews?.nodes.length ?? 0,
+      edges: graphForViews?.edges.length ?? 0,
       visible: visibleGraph.nodes.length,
       changed
     };
-  }, [graph, visibleGraph.nodes.length]);
+  }, [graphForViews, visibleGraph.nodes.length]);
 
   const actionBarTitle = selectedNode
     ? `${KIND_LABELS[selectedNode.kind]}${selectedNode.changeStatus ? ` · ${changeStatusLabel(selectedNode)}` : ""}`
@@ -281,10 +356,10 @@ export default function App() {
             <input
               id="repoPath"
               value={repoPath}
-              onChange={(event) => setRepoPath(event.target.value)}
+              onChange={(event) => handleRepoPathChange(event.target.value)}
               placeholder="/path/to/local/repository"
             />
-            <button type="button" onClick={loadGraph} disabled={loading}>
+            <button type="button" onClick={() => void loadGraph()} disabled={loading}>
               {loading ? "Loading" : "Load"}
             </button>
           </div>
@@ -297,8 +372,30 @@ export default function App() {
             <option value="pyramid">3D Pyramid</option>
             <option value="plane">Horizontal Plane</option>
             <option value="slice">Vertical Slice</option>
-            <option value="commit">Commit Diff</option>
           </select>
+        </section>
+
+        <section className="control-group">
+          <label htmlFor="commitFilter">Commit filter</label>
+          <select
+            id="commitFilter"
+            value={commitFilterValue}
+            onChange={(event) => handleCommitFilterChange(event.target.value)}
+            disabled={loading || commitOptionsLoading || !repoPath.trim()}
+          >
+            <option value="">{commitOptionsLoading ? "Loading commits" : "No commit filter"}</option>
+            {commitOptions.map((option) => (
+              <option key={commitFilterOptionValue(option)} value={commitFilterOptionValue(option)}>
+                {formatCommitFilterOption(option)}
+              </option>
+            ))}
+          </select>
+          {commitOptionsWarning && <div className="field-note">{commitOptionsWarning}</div>}
+          {diffFilterActive && (
+            <button type="button" onClick={clearCommitFilter} disabled={loading}>
+              Clear commit filter
+            </button>
+          )}
         </section>
 
         {viewMode === "plane" && (
@@ -329,23 +426,6 @@ export default function App() {
                 </option>
               ))}
             </select>
-          </section>
-        )}
-
-        {viewMode === "commit" && (
-          <section className="control-group">
-            <label htmlFor="commitHash">Commit hash</label>
-            <div className="inline-field">
-              <input
-                id="commitHash"
-                value={commitHash}
-                onChange={(event) => setCommitHash(event.target.value)}
-                placeholder="abc123"
-              />
-              <button type="button" onClick={loadGraph} disabled={loading || !commitHash.trim()}>
-                Diff
-              </button>
-            </div>
           </section>
         )}
 
@@ -405,6 +485,7 @@ export default function App() {
           <div className="stage-meta">
             {graph?.repo.github.branch && <span>{graph.repo.github.branch}</span>}
             {graph?.repo.github.commitHash && <span>{graph.repo.github.commitHash.slice(0, 12)}</span>}
+            {diffFilterActive && activeCommitFilterLabel && <span>filter {activeCommitFilterLabel}</span>}
           </div>
         </header>
 
@@ -451,13 +532,13 @@ export default function App() {
 
         <div
           className={`graph-canvas ${viewMode === "pyramid" ? "graph-canvas-3d" : "graph-canvas-2d"} ${
-            viewMode === "map" || viewMode === "commit" ? "graph-canvas-layered" : ""
+            viewMode === "map" ? "graph-canvas-layered" : ""
           }`}
           style={{ height: GRAPH_HEIGHT }}
         >
           {visibleGraph.nodes.length ? (
-            viewMode === "map" || viewMode === "plane" || viewMode === "slice" || viewMode === "commit" ? (
-              viewMode === "map" || viewMode === "commit" ? (
+            viewMode === "map" || viewMode === "plane" || viewMode === "slice" ? (
+              viewMode === "map" ? (
                 <div className="graph-layered-frame">
                   <LayerAxis selectedLayer={selectedLayer} onLayerClick={openLayerSlice} />
                   <div className="graph-layered-scroll" ref={layeredScrollRef}>
@@ -539,6 +620,59 @@ function LayerAxis({
   );
 }
 
+function commitFilterOptionValue(option: CommitFilterOption) {
+  return option.kind === "staged" ? "staged" : `commit:${option.sha}`;
+}
+
+function commitFilterFromValue(value: string, options: CommitFilterOption[]): CommitGraphFilter {
+  if (!value) return { label: "" };
+  if (value === "staged") return { diffTarget: "staged", label: "Staged Local Changes" };
+
+  const commitHash = value.startsWith("commit:") ? value.slice("commit:".length) : "";
+  const option = options.find((candidate) => candidate.kind === "commit" && candidate.sha === commitHash);
+  if (!commitHash) return { label: "" };
+  return {
+    diffTarget: "commit",
+    commitHash,
+    label: option ? formatCommitFilterOption(option) : commitHash.slice(0, 12)
+  };
+}
+
+function formatCommitFilterOption(option: CommitFilterOption) {
+  if (option.kind === "staged") return option.label;
+  return `${option.message} · ${formatCommitDate(option.committedAt)}`;
+}
+
+function formatCommitDate(committedAt: string) {
+  const date = new Date(committedAt);
+  if (Number.isNaN(date.getTime())) return committedAt;
+  return COMMIT_DATE_FORMAT.format(date);
+}
+
+function filterGraphForCommit(graph: GraphResponse | null) {
+  if (!graph) return null;
+  const filterIds = commitFilterIds(graph.nodes, graph.edges);
+  if (!filterIds) return graph;
+  const nodes = graph.nodes.filter((node) => filterIds.has(node.id));
+  const edges = graph.edges.filter((edge) => {
+    const source = edgeEndpoint(edge.source);
+    const target = edgeEndpoint(edge.target);
+    return filterIds.has(source) && filterIds.has(target);
+  });
+  return { ...graph, nodes, edges };
+}
+
+function commitFilterIds(nodes: GraphNode[], edges: GraphEdge[]) {
+  const changedIds = new Set(nodes.filter((node) => node.changed).map((node) => node.id));
+  if (!changedIds.size) return undefined;
+
+  const ids = new Set(changedIds);
+  for (const id of ancestorContextIds(changedIds, nodes, edges)) {
+    ids.add(id);
+  }
+  return ids;
+}
+
 function buildVisibleGraph(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -570,10 +704,6 @@ function buildVisibleGraph(
   } else if (options.viewMode === "slice" && options.selectedNodeId) {
     selectedIds = sliceIds(options.selectedNodeId, nodes, edges);
     contextIds = ancestorContextIds(selectedIds, nodes, edges);
-  } else if (options.viewMode === "commit") {
-    const visibility = commitVisibility(nodes, edges, options.expandedNodeIds, options.revealedNodeIds, options.includeCrossCutting);
-    selectedIds = visibility.ids;
-    contextIds = visibility.contextIds;
   } else {
     selectedIds = pyramidVisibleIds(nodes, edges, options.expandedNodeIds);
   }
@@ -632,40 +762,53 @@ function layeredMapVisibility(
   revealedIds: Set<string>,
   includeCrossCutting: boolean
 ) {
-  const ids = new Set(nodes.filter((node) => node.kind === "vision" || node.kind === "capability").map((node) => node.id));
+  const seedIds = new Set(nodes.filter((node) => node.kind === "vision" || node.kind === "capability").map((node) => node.id));
+  const changedFallbackIds = changedIdsWithoutSeedAncestor(nodes, edges, seedIds);
+  const ids = new Set([...seedIds, ...changedFallbackIds]);
   if (includeCrossCutting) addConnectedCrossCutting(ids, nodes, edges);
   addExpandedTargets(ids, expandedIds, nodes, edges);
   for (const id of revealedIds) ids.add(id);
-  const contextIds = ancestorContextIds(revealedIds, nodes, edges);
+  const contextRootIds = new Set([...revealedIds, ...changedFallbackIds]);
+  const contextIds = ancestorContextIds(contextRootIds, nodes, edges);
   for (const id of contextIds) ids.add(id);
   if (includeCrossCutting) addConnectedCrossCutting(ids, nodes, edges);
   return { ids, contextIds };
 }
 
-function commitVisibility(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  expandedIds: Set<string>,
-  revealedIds: Set<string>,
-  includeCrossCutting: boolean
-) {
-  const changedIds = new Set(nodes.filter((node) => node.changed).map((node) => node.id));
-  const ids = new Set(changedIds);
+function changedIdsWithoutSeedAncestor(nodes: GraphNode[], edges: GraphEdge[], seedIds: Set<string>) {
+  const fallbackIds = new Set<string>();
+  for (const node of nodes) {
+    if (node.changed && !hasLayeredSeedAncestor(node.id, seedIds, nodes, edges)) {
+      fallbackIds.add(node.id);
+    }
+  }
+  return fallbackIds;
+}
+
+function hasLayeredSeedAncestor(rootId: string, seedIds: Set<string>, nodes: GraphNode[], edges: GraphEdge[]) {
+  if (seedIds.has(rootId)) return true;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const inbound = new Map<string, string[]>();
   for (const edge of edges) {
-    const source = edgeEndpoint(edge.source);
-    const target = edgeEndpoint(edge.target);
-    if (changedIds.has(source)) ids.add(target);
-    if (changedIds.has(target)) ids.add(source);
+    push(inbound, edgeEndpoint(edge.target), edgeEndpoint(edge.source));
   }
-  for (const id of changedIds) {
-    for (const target of expansionTargets(id, nodes, edges)) ids.add(target);
+
+  const seen = new Set<string>([rootId]);
+  const queue = [rootId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    const currentLayer = byId.get(current)?.layerIndex;
+    for (const previous of inbound.get(current) ?? []) {
+      if (seedIds.has(previous)) return true;
+      if (seen.has(previous)) continue;
+      const previousNode = byId.get(previous);
+      const previousLayer = previousNode?.layerIndex;
+      if (previousLayer === undefined || currentLayer === undefined || previousLayer >= currentLayer) continue;
+      seen.add(previous);
+      queue.push(previous);
+    }
   }
-  for (const id of revealedIds) ids.add(id);
-  addExpandedTargets(ids, expandedIds, nodes, edges);
-  const contextIds = ancestorContextIds(ids, nodes, edges);
-  for (const id of contextIds) ids.add(id);
-  if (includeCrossCutting) addConnectedCrossCutting(ids, nodes, edges);
-  return { ids, contextIds };
+  return false;
 }
 
 function pyramidVisibleIds(nodes: GraphNode[], edges: GraphEdge[], expandedIds: Set<string>) {
@@ -708,8 +851,6 @@ function expansionTargets(sourceId: string, nodes: GraphNode[], edges: GraphEdge
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const sourceNode = byId.get(sourceId);
   if (!sourceNode) return [];
-  const sourceLayer = sourceNode.layerIndex;
-  if (sourceLayer === undefined) return [];
   const targets = new Set<string>();
 
   for (const edge of edges) {
@@ -718,13 +859,20 @@ function expansionTargets(sourceId: string, nodes: GraphNode[], edges: GraphEdge
     const targetId = edgeEndpoint(edge.target);
     const targetNode = byId.get(targetId);
     if (!targetNode) continue;
-    const targetLayer = targetNode.layerIndex;
-    if (targetLayer === sourceLayer + 1) {
+    if (isMeaningfulDownstreamEdge(edge, sourceNode, targetNode)) {
       targets.add(targetId);
     }
   }
 
   return [...targets];
+}
+
+function isMeaningfulDownstreamEdge(edge: GraphEdge, sourceNode: GraphNode, targetNode: GraphNode) {
+  const sourceLayer = sourceNode.layerIndex;
+  const targetLayer = targetNode.layerIndex;
+  if (sourceLayer === undefined || targetLayer === undefined) return false;
+  if (targetLayer === sourceLayer + 1) return true;
+  return sourceNode.kind === "module" && targetNode.kind === "code" && edge.kind === "source_reference";
 }
 
 function sameLayerPeerTargets(sourceId: string, nodes: GraphNode[], edges: GraphEdge[]) {
@@ -865,7 +1013,7 @@ function positionNodes(
     else push(byLayer, node.layerIndex, node);
   }
 
-  if (viewMode === "map" || viewMode === "commit") {
+  if (viewMode === "map") {
     return layeredPosition(nodes, edges, selectedNodeId);
   }
 
@@ -935,8 +1083,7 @@ function layeredAdjacency(nodes: GraphNode[], edges: GraphEdge[]) {
     const sourceNode = byId.get(source);
     const targetNode = byId.get(target);
     if (!sourceNode || !targetNode) continue;
-    if (sourceNode.layerIndex === undefined || targetNode.layerIndex === undefined) continue;
-    if (targetNode.layerIndex !== sourceNode.layerIndex + 1) continue;
+    if (!isMeaningfulDownstreamEdge(edge, sourceNode, targetNode)) continue;
     push(children, source, target);
     push(parents, target, source);
   }
@@ -1086,7 +1233,7 @@ function Graph2D({
       role="img"
       style={{ width: bounds.width, height: bounds.height }}
     >
-      {(mode === "map" || mode === "commit") && (
+      {mode === "map" && (
         <g className="graph-layer-rows">
           {LAYER_LABELS.map((label, index) => {
             const y = LAYER_ROW_START_Y + index * LAYER_ROW_GAP;
@@ -1286,7 +1433,7 @@ function graphBounds(nodes: PositionedNode[], mode: Graph2DMode, viewportWidth =
   const points = nodes.map((node) => projectNode(node, mode));
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
-  if (mode === "map" || mode === "commit") {
+  if (mode === "map") {
     const viewportPadding = Math.max(240, viewportWidth * 0.5);
     const minX = Math.min(...xs, 0) - viewportPadding;
     const maxX = Math.max(...xs, 0) + Math.max(360, viewportPadding);
@@ -1312,7 +1459,7 @@ function graphBounds(nodes: PositionedNode[], mode: Graph2DMode, viewportWidth =
 }
 
 function projectNode(node: PositionedNode, mode: Graph2DMode) {
-  if (mode === "map" || mode === "commit") return { x: node.x, y: node.y };
+  if (mode === "map") return { x: node.x, y: node.y };
   if (mode === "plane") return { x: node.x, y: node.z };
   return { x: node.x, y: -node.y };
 }
@@ -1363,23 +1510,23 @@ function nodeLabel(node: GraphNode) {
 }
 
 function nodeLabelLines(node: GraphNode) {
-  const prefix = node.changed ? "CHANGED · " : "";
   const diagram = node.hasDiagrams ? " ◇" : "";
-  return wrapLabel(`${prefix}${displayNodeLabel(node)}${diagram}`, 28);
+  return wrapLabel(`${displayNodeLabel(node)}${diagram}`, 28);
 }
 
 function displayNodeLabel(node: GraphNode) {
-  const prefixes = [
-    `${KIND_LABELS[node.kind]}:`,
-    "UI Module:",
-    "API Module:",
-    "Backend Module:",
-    "Frontend Module:",
-    "Data Module:",
-    "Domain Module:"
+  const prefixPatterns = [
+    new RegExp(`^${escapeRegExp(KIND_LABELS[node.kind])}:\\s*`),
+    /^(UI|API|Backend|Frontend|Data|Domain) Module:\s*/i,
+    /^State(?:,|\s*\/)?\s*Data(?:,?\s*(?:&|and)|\s*\/)?\s*(Sync|Graph|API) Contracts?:\s*/i,
+    /^(State|Data|Sync|Graph|API) Contracts?:\s*/i
   ];
-  const prefix = prefixes.find((candidate) => node.label.startsWith(candidate));
-  return prefix ? node.label.slice(prefix.length).trim() : node.label;
+  const pattern = prefixPatterns.find((candidate) => candidate.test(node.label));
+  return pattern ? node.label.replace(pattern, "").trim() : node.label;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function wrapLabel(label: string, maxLineLength: number) {
@@ -1439,7 +1586,6 @@ function titleForView(viewMode: ViewMode, layer: number) {
   if (viewMode === "map") return "Layered Understanding Map";
   if (viewMode === "plane") return `${LAYER_LABELS[layer]} Plane`;
   if (viewMode === "slice") return "Vertical Feature Slice";
-  if (viewMode === "commit") return "Change-Aware Layered Map";
   return "3D Pyramid View";
 }
 

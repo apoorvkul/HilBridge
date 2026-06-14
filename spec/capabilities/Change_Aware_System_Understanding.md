@@ -6,11 +6,14 @@ The change view should prioritize structural understanding first: which nodes ch
 
 Change-aware exploration should reuse the layered understanding model instead of becoming an isolated diff surface. A changed flow, module, contract, or code node should be understandable through its capability and Vision context. Changed cross-cutting notes should show the layers or nodes they affect.
 
+Diff review should behave as a filter over the graph rather than as a separate view mode. The filter includes changed nodes plus upstream nodes that connect those changes back toward Vision. Each view then applies its normal exploration rules to that filtered graph.
+
 ## User Guarantees
 
 - Users can see changed graph nodes in their hierarchical context.
 - Users can identify affected ancestors and descendants without manually tracing every edge.
 - Users can distinguish new, modified, removed, and related unchanged context when that information is available.
+- Users can inspect commit-relevant changes in any available graph view.
 - Users can keep their system mental model current after agent-driven changes.
 
 ## Non-Goals

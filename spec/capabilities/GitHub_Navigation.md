@@ -1,6 +1,6 @@
 # GitHub Navigation
 
-Clicking a note or source-code node opens its GitHub blob URL in a new browser tab when the selected repository has a recognizable GitHub origin remote. Changed nodes prefer the commit URL when commit diff mode supplies one.
+Clicking a note or source-code node opens its GitHub blob URL in a new browser tab when the selected repository has a recognizable GitHub origin remote. Changed nodes prefer the commit URL anchored to the selected file's diff section when the commit filter supplies one.
 
 ## Flows
 

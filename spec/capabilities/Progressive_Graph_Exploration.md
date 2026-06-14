@@ -2,25 +2,26 @@
 
 Users should be able to explore the knowledge graph incrementally instead of starting with the full dense graph. The initial view should show the highest-level system shape so Vision and Capability nodes are immediately legible.
 
-Selecting a node should expand the graph one layer downward from that node when direct next-layer targets exist. The UI should also expose contextual actions to expand or collapse the graph from the selected node. Selection should highlight the node's ancestry, directly visible descendants, and relevant peer or cross-cutting context.
+Selecting a node should expand the graph one meaningful layer downward from that node when direct downstream targets exist. The UI should also expose contextual actions to expand or collapse the graph from the selected node. Selection should highlight the node's ancestry, directly visible descendants, and relevant peer or cross-cutting context.
 
-Expansion reveals only the next abstraction layer from the selected node while preserving the abstraction direction:
+Expansion reveals only the next meaningful abstraction layer from the selected node while preserving the abstraction direction:
 
 - Vision expands to capabilities.
 - Capabilities expand to flows.
 - Flows expand to modules.
-- Modules expand to contracts.
+- Modules expand to contracts and/or code, depending on whether explicit contracts exist.
 - Contracts expand to code.
 
-Expansion should not skip layers. A capability expansion should reveal directly connected flows only; those flows must then be selected and expanded before modules appear. This keeps unrelated or deeper lower-layer nodes hidden until their parent path is selected.
+Expansion should not skip documented layers that exist on the selected path. A capability expansion should reveal directly connected flows only; those flows must then be selected and expanded before modules appear. A module does not need an artificial contract node before code appears when the spec graph has no meaningful contract boundary for that module. This keeps unrelated or deeper lower-layer nodes hidden until their parent path is selected without forcing empty documentation layers.
 
 Progressive exploration should work across the main hierarchy and layer-specific slice views. If a layer slice reveals additional connected nodes, those nodes should be reflected in the main exploration state with enough ancestor context to make their appearance understandable.
 
 ## User Guarantees
 
 - The first graph view is readable without manual filtering.
-- Selecting a node reveals its direct next-layer targets when available and makes actions explicit.
-- Expansion follows the hierarchy one layer at a time from higher abstraction to lower implementation detail.
+- Selecting a node reveals its direct meaningful downstream targets when available and makes actions explicit.
+- Expansion follows the hierarchy one meaningful layer at a time from higher abstraction to lower implementation detail.
+- Modules can reveal direct code references when no explicit contract boundary exists.
 - Collapse lets users reduce local detail after exploring it.
 - Selection can act as a spotlight without hiding all surrounding context.
 - Hidden nodes are not lost; they remain discoverable through expansion, search, plane views, slice views, or other explicit navigation.
@@ -30,6 +31,7 @@ Progressive exploration should work across the main hierarchy and layer-specific
 - This capability does not define the final visual layout algorithm.
 - This capability does not require a specific 2D or 3D renderer.
 - This capability does not define persistence of expansion state across sessions.
+- This capability does not require every module to have a contract document.
 
 ## Flows
 

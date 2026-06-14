@@ -8,8 +8,9 @@ The domain model is a layered repository knowledge graph.
 - Capability: user-facing value.
 - Flow: user or system journey.
 - Module: implementation responsibility boundary.
-- Contract: data or API shape.
+- Contract: data, API, state, integration, or compatibility boundary with independent traceability value.
 - Code: source file referenced by documentation.
+- Direct code traceability: a module-to-code relationship used when no meaningful contract boundary exists between the implementation responsibility and the referenced source.
 - Cross-cutting note: architecture, domain, or technology note connected to any layer.
 - Changed node: graph node corresponding to a file changed by a commit.
 - Layered understanding map: a hierarchical visual model that starts from Vision and progressively reveals lower abstraction layers.

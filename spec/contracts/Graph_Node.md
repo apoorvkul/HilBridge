@@ -9,7 +9,7 @@ A graph node represents either a markdown note or a source-code file.
 - `kind`: node kind from the shared union.
 - `path`: repo-relative file path.
 - `githubUrl`: optional GitHub blob URL.
-- `githubDiffUrl`: optional commit URL for changed nodes.
+- `githubDiffUrl`: optional commit URL, anchored to the changed file's diff when a GitHub file anchor can be generated.
 - `layerIndex`: optional abstraction-layer index.
 - `changed`: optional commit-diff marker.
 - `changeStatus`: optional commit-diff status, one of `added`, `modified`, `deleted`, `renamed`, `copied`, or `unknown`.
