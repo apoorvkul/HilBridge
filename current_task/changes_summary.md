@@ -4,12 +4,14 @@
 
 This staged batch combines the earlier commit-filter dropdown/staged-diff work with the optional contract traceability implementation. The optional contract change is aligned with the approved plan: module expansion now treats direct module-to-code `source_reference` edges as meaningful downstream links, while keeping contract nodes first-class.
 
-The reviewed P1 bug has been fixed in the follow-up iteration.
+The reviewed visibility bugs have been fixed in the follow-up iterations.
 
 ## Findings
 
-- Fixed [P1] Commit-filtered Layered Map can render empty for changed nodes without Vision/Capability ancestors.
-  `layeredMapVisibility` now seeds changed nodes directly when they have no Vision or Capability ancestor in the filtered graph. Normally connected lower-layer changed nodes still rely on progressive expansion from their visible ancestors.
+- Fixed [P1] Commit-filtered Layered Map can render empty when the selected view has no visible touched nodes.
+  Diff filtering now leaves visible Vision as orientation context in that case instead of forcing lower-layer changed nodes into the initial layered map.
+- Fixed follow-up visibility regression where orphan or lower-layer changed code nodes could appear on initial layered-map load.
+  `layeredMapVisibility` now follows normal progressive seeds only; the commit filter keeps touched nodes only after the active view has already made them visible.
 
 ## Plan Alignment
 

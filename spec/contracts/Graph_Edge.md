@@ -11,6 +11,8 @@ A graph edge connects two graph nodes by id.
 
 `source_reference` edges connect documentation notes to code nodes. They can also carry direct module-to-code traceability when a module references code without an intervening contract node.
 
+`changed_with` edges connect touched nodes to each other for commit-diff context, but they do not define upstream ancestry or progressive expansion paths.
+
 ## Modules
 
 - [Shared Graph Types](../modules/Shared_Graph_Types.md)

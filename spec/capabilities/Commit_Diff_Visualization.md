@@ -1,10 +1,10 @@
 # Commit Diff Visualization
 
-Users choose a commit filter from a dropdown of GitHub commit messages with commit date and time, or choose `Staged Local Changes` when the local checkout has staged changes. The backend marks changed markdown and source nodes, records change status metadata, creates missing placeholder nodes for changed files, and adds `changed_with` edges between changed nodes. The frontend filters the graph to changed nodes plus upstream nodes that connect those changes back toward Vision, then lets the current view render that filtered graph.
+Users choose a commit filter from a dropdown of GitHub commit messages with commit date and time, or choose `Staged Local Changes` when the local checkout has staged changes. The backend marks changed markdown and source nodes, records change status metadata, creates missing placeholder nodes for changed files, and adds `changed_with` edges between changed nodes. The frontend applies the commit filter to the current view's visible graph so touched nodes remain visible when the view reaches them, and upstream context is added only when needed to connect already visible touched nodes back toward Vision.
 
 Commit diff visualization should feed change-aware system understanding. Changed nodes should be explainable through their hierarchy: the capability, flow, module, contract, or code context that helps a human understand what part of the system moved. The first priority is structural orientation without forcing a separate review mode.
 
-Diff review follows the selected graph view. In the layered map, progressive graph exploration still starts from Vision and Capabilities when changed nodes have that ancestor context, then lower-layer changed nodes become visible when the user expands the relevant visible parent one layer at a time. Changed nodes with no Vision or Capability ancestor are seeded directly so orphaned or cross-cutting-only diffs remain inspectable. In the pyramid, plane, and slice views, the same commit-relevant graph filter applies before each view derives its visible nodes.
+Diff review follows the selected graph view. Each view first derives its normal visible subset, then the commit filter keeps visible touched nodes and the visible upstream nodes needed to connect those touched nodes toward Vision. In the layered map, the initial view still follows progressive exploration by showing Vision and touched top-level nodes; lower-layer changed nodes and their unchanged ancestors appear as the user expands the relevant path. Changed lower-layer nodes do not self-seed the initial layered map, even when they lack reconstructed Vision or Capability ancestry.
 
 ## User Guarantees
 
@@ -12,7 +12,7 @@ Diff review follows the selected graph view. In the layered map, progressive gra
 - Users can choose recent GitHub commits by message and timestamp instead of manually entering a hash.
 - Users can inspect staged local changes before they are committed.
 - Changed implementation nodes can be related back to higher-level design notes when links exist.
-- Lower-layer changed and unchanged nodes are revealed incrementally instead of appearing all at once.
+- Touched top-level nodes are visible immediately, while lower-layer changed nodes and related upstream context are revealed incrementally instead of appearing all at once.
 - Users can distinguish recognized added, modified, deleted, renamed, and copied files.
 - Commit-filtered views support visual orientation before detailed textual review.
 

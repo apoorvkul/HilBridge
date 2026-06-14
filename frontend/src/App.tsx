@@ -191,7 +191,7 @@ export default function App() {
     graphRef.current?.cameraPosition({ x: 0, y: 90, z: 760 }, { x: 0, y: 0, z: 0 }, 600);
   }, [viewMode, selectedLayer, selectedNodeId, graph]);
 
-  const graphForViews = useMemo(() => filterGraphForCommit(graph), [graph]);
+  const graphForViews = graph;
   const diffFilterActive = Boolean(graph?.nodes.some((node) => node.changed));
 
   useEffect(() => {
@@ -226,9 +226,10 @@ export default function App() {
       revealedNodeIds,
       search,
       includeCrossCutting,
-      changedOnly
+      changedOnly,
+      diffFilterActive
     });
-  }, [graphForViews, viewMode, selectedLayer, selectedNodeId, expandedNodeIds, revealedNodeIds, search, includeCrossCutting, changedOnly]);
+  }, [graphForViews, viewMode, selectedLayer, selectedNodeId, expandedNodeIds, revealedNodeIds, search, includeCrossCutting, changedOnly, diffFilterActive]);
 
   const layeredFocusId = useMemo(() => {
     if (viewMode !== "map") return "";
@@ -649,30 +650,6 @@ function formatCommitDate(committedAt: string) {
   return COMMIT_DATE_FORMAT.format(date);
 }
 
-function filterGraphForCommit(graph: GraphResponse | null) {
-  if (!graph) return null;
-  const filterIds = commitFilterIds(graph.nodes, graph.edges);
-  if (!filterIds) return graph;
-  const nodes = graph.nodes.filter((node) => filterIds.has(node.id));
-  const edges = graph.edges.filter((edge) => {
-    const source = edgeEndpoint(edge.source);
-    const target = edgeEndpoint(edge.target);
-    return filterIds.has(source) && filterIds.has(target);
-  });
-  return { ...graph, nodes, edges };
-}
-
-function commitFilterIds(nodes: GraphNode[], edges: GraphEdge[]) {
-  const changedIds = new Set(nodes.filter((node) => node.changed).map((node) => node.id));
-  if (!changedIds.size) return undefined;
-
-  const ids = new Set(changedIds);
-  for (const id of ancestorContextIds(changedIds, nodes, edges)) {
-    ids.add(id);
-  }
-  return ids;
-}
-
 function buildVisibleGraph(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -685,6 +662,7 @@ function buildVisibleGraph(
     search: string;
     includeCrossCutting: boolean;
     changedOnly: boolean;
+    diffFilterActive: boolean;
   }
 ): VisibleGraph {
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -692,11 +670,23 @@ function buildVisibleGraph(
   let contextIds = new Set<string>();
 
   if (options.viewMode === "map") {
-    const visibility = layeredMapVisibility(nodes, edges, options.expandedNodeIds, options.revealedNodeIds, options.includeCrossCutting);
+    const visibility = layeredMapVisibility(
+      nodes,
+      edges,
+      options.expandedNodeIds,
+      options.revealedNodeIds,
+      options.includeCrossCutting
+    );
     selectedIds = visibility.ids;
     contextIds = visibility.contextIds;
   } else if (options.viewMode === "plane") {
-    const visibility = layeredMapVisibility(nodes, edges, options.expandedNodeIds, options.revealedNodeIds, options.includeCrossCutting);
+    const visibility = layeredMapVisibility(
+      nodes,
+      edges,
+      options.expandedNodeIds,
+      options.revealedNodeIds,
+      options.includeCrossCutting
+    );
     selectedIds = new Set(
       [...visibility.ids].filter((id) => byId.get(id)?.layerIndex === options.selectedLayer)
     );
@@ -710,6 +700,13 @@ function buildVisibleGraph(
 
   if (!options.includeCrossCutting || options.viewMode === "plane" || options.viewMode === "slice") {
     selectedIds = new Set([...selectedIds].filter((id) => !CROSS_KINDS.has(byId.get(id)?.kind as GraphNodeKind)));
+  }
+
+  if (options.diffFilterActive) {
+    const diffVisibility = diffVisibleSelection(selectedIds, nodes, edges);
+    selectedIds = diffVisibility.ids;
+    contextIds = new Set([...contextIds].filter((id) => selectedIds.has(id)));
+    for (const id of diffVisibility.contextIds) contextIds.add(id);
   }
 
   if (options.changedOnly) {
@@ -755,6 +752,27 @@ function shouldShowVisibleEdge(edge: GraphEdge, byId: Map<string, GraphNode>, se
   return Boolean(selectedNodeId && (source === selectedNodeId || target === selectedNodeId));
 }
 
+function diffVisibleSelection(selectedIds: Set<string>, nodes: GraphNode[], edges: GraphEdge[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const changedIds = new Set(nodes.filter((node) => node.changed).map((node) => node.id));
+  const visibleChangedIds = new Set([...selectedIds].filter((id) => changedIds.has(id)));
+  const ids = new Set(visibleChangedIds);
+  const contextIds = new Set<string>();
+
+  for (const id of ancestorContextIds(visibleChangedIds, nodes, edges)) {
+    if (!selectedIds.has(id)) continue;
+    ids.add(id);
+    if (!changedIds.has(id)) contextIds.add(id);
+  }
+
+  if (!ids.size && changedIds.size) {
+    const visibleVision = [...selectedIds].find((id) => byId.get(id)?.kind === "vision");
+    if (visibleVision) ids.add(visibleVision);
+  }
+
+  return { ids, contextIds };
+}
+
 function layeredMapVisibility(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -763,52 +781,15 @@ function layeredMapVisibility(
   includeCrossCutting: boolean
 ) {
   const seedIds = new Set(nodes.filter((node) => node.kind === "vision" || node.kind === "capability").map((node) => node.id));
-  const changedFallbackIds = changedIdsWithoutSeedAncestor(nodes, edges, seedIds);
-  const ids = new Set([...seedIds, ...changedFallbackIds]);
+  const ids = new Set(seedIds);
   if (includeCrossCutting) addConnectedCrossCutting(ids, nodes, edges);
   addExpandedTargets(ids, expandedIds, nodes, edges);
   for (const id of revealedIds) ids.add(id);
-  const contextRootIds = new Set([...revealedIds, ...changedFallbackIds]);
+  const contextRootIds = new Set(revealedIds);
   const contextIds = ancestorContextIds(contextRootIds, nodes, edges);
   for (const id of contextIds) ids.add(id);
   if (includeCrossCutting) addConnectedCrossCutting(ids, nodes, edges);
   return { ids, contextIds };
-}
-
-function changedIdsWithoutSeedAncestor(nodes: GraphNode[], edges: GraphEdge[], seedIds: Set<string>) {
-  const fallbackIds = new Set<string>();
-  for (const node of nodes) {
-    if (node.changed && !hasLayeredSeedAncestor(node.id, seedIds, nodes, edges)) {
-      fallbackIds.add(node.id);
-    }
-  }
-  return fallbackIds;
-}
-
-function hasLayeredSeedAncestor(rootId: string, seedIds: Set<string>, nodes: GraphNode[], edges: GraphEdge[]) {
-  if (seedIds.has(rootId)) return true;
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const inbound = new Map<string, string[]>();
-  for (const edge of edges) {
-    push(inbound, edgeEndpoint(edge.target), edgeEndpoint(edge.source));
-  }
-
-  const seen = new Set<string>([rootId]);
-  const queue = [rootId];
-  while (queue.length) {
-    const current = queue.shift()!;
-    const currentLayer = byId.get(current)?.layerIndex;
-    for (const previous of inbound.get(current) ?? []) {
-      if (seedIds.has(previous)) return true;
-      if (seen.has(previous)) continue;
-      const previousNode = byId.get(previous);
-      const previousLayer = previousNode?.layerIndex;
-      if (previousLayer === undefined || currentLayer === undefined || previousLayer >= currentLayer) continue;
-      seen.add(previous);
-      queue.push(previous);
-    }
-  }
-  return false;
 }
 
 function pyramidVisibleIds(nodes: GraphNode[], edges: GraphEdge[], expandedIds: Set<string>) {
@@ -868,6 +849,7 @@ function expansionTargets(sourceId: string, nodes: GraphNode[], edges: GraphEdge
 }
 
 function isMeaningfulDownstreamEdge(edge: GraphEdge, sourceNode: GraphNode, targetNode: GraphNode) {
+  if (!isUpstreamContextEdge(edge.kind)) return false;
   const sourceLayer = sourceNode.layerIndex;
   const targetLayer = targetNode.layerIndex;
   if (sourceLayer === undefined || targetLayer === undefined) return false;
@@ -893,16 +875,18 @@ function sameLayerPeerTargets(sourceId: string, nodes: GraphNode[], edges: Graph
 
 function ancestorContextIds(rootIds: Iterable<string>, nodes: GraphNode[], edges: GraphEdge[]) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const inbound = new Map<string, string[]>();
+  const inbound = new Map<string, { source: string; kind: GraphEdge["kind"] }[]>();
   for (const edge of edges) {
-    push(inbound, edgeEndpoint(edge.target), edgeEndpoint(edge.source));
+    push(inbound, edgeEndpoint(edge.target), { source: edgeEndpoint(edge.source), kind: edge.kind });
   }
   const selected = new Set<string>();
   const queue = [...rootIds];
   while (queue.length) {
     const current = queue.shift()!;
     const currentLayer = byId.get(current)?.layerIndex;
-    for (const previous of inbound.get(current) ?? []) {
+    for (const edge of inbound.get(current) ?? []) {
+      if (!isUpstreamContextEdge(edge.kind)) continue;
+      const previous = edge.source;
       const previousNode = byId.get(previous);
       if (!previousNode || CROSS_KINDS.has(previousNode.kind)) continue;
       const previousLayer = previousNode.layerIndex;
@@ -914,6 +898,10 @@ function ancestorContextIds(rootIds: Iterable<string>, nodes: GraphNode[], edges
     }
   }
   return selected;
+}
+
+function isUpstreamContextEdge(kind: GraphEdge["kind"]) {
+  return kind !== "changed_with";
 }
 
 function addConnectedCrossCutting(ids: Set<string>, nodes: GraphNode[], edges: GraphEdge[]) {
